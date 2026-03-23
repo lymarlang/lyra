@@ -39,3 +39,31 @@ int handle_init() {
     std::cout << "Project initialized successfully.\n";
     return 0;
 }
+
+int handle_new(int argc, char** argv) {
+    if (argc < 3) {
+        std::cerr << "error: missing project name\n";
+        return 1;
+    }
+
+    std::string project_name = argv[2];
+    std::string template_name = (argc > 3) ? argv[3] : "default";
+
+    std::cout << "Creating new " << template_name << " project '" << project_name << "'...\n";
+
+    fs::create_directories(project_name);
+    fs::current_path(project_name);
+
+    handle_init();
+
+    if (template_name == "web-app") {
+        std::cout << "Applying web-app template...\n";
+        // Customize web-app template
+        std::ofstream web_file("src/server.lm");
+        web_file << "// Web Server Template\n";
+        web_file << "import http;\n";
+        web_file << "http.listen(8080);\n";
+    }
+
+    return 0;
+}
