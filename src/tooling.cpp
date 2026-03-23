@@ -133,9 +133,18 @@ int handle_tree(int argc, char** argv) {
         return 1;
     }
 
+    std::vector<ResolvedDependency> deps = DependencyResolver::resolve(".");
+    if (deps.empty()) {
+        std::cout << root_meta.name << " (" << root_meta.version << ")\n";
+        std::cout << "No dependencies found.\n";
+        return 0;
+    }
+
     std::cout << "Dependency tree:\n";
     std::cout << root_meta.name << " (" << root_meta.version << ")\n";
 
+    // For now, let's keep the recursive printer as it naturally handles the hierarchy,
+    // but the DependencyResolver ensures all dependencies are correctly fetched and versioned.
     std::set<std::string> visited;
     print_tree_recursive(".", 0, visited);
 
@@ -218,12 +227,11 @@ int handle_clean() {
         std::cout << "Removed obj/ directory\n";
     }
 
-    // Remove any .tar.gz files from 'pack'
-    for (const auto& entry : fs::directory_iterator(".")) {
-        if (entry.path().extension() == ".gz" && entry.path().stem().extension() == ".tar") {
-            fs::remove(entry.path());
-            std::cout << "Removed package: " << entry.path().filename() << "\n";
-        }
+    // Remove specific project package tarball
+    std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
+    if (fs::exists(tarball)) {
+        fs::remove(tarball);
+        std::cout << "Removed package: " << tarball << "\n";
     }
 
     return 0;

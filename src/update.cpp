@@ -51,12 +51,11 @@ int handle_fetch(int argc, char** argv) {
         // It's a cached dependency. Check if it's actually there.
         if (!fs::exists(dep.path)) {
             std::cout << "Restoring " << dep.name << " (" << dep.version << ")..." << std::endl;
-            // We need to know if it's a git or registry dependency to restore it properly.
-            // For now, let's assume if it's in cache, we can try to re-download it.
-            // However, our LockSystem doesn't currently store the source URL.
-            // This is a limitation of the current LockSystem.
-            // For now, let's just use RegistryClient::download as a fallback.
-            RegistryClient::download(dep.name, dep.version);
+            if (!dep.origin_url.empty()) {
+                FetchSystem::fetch_git(dep.name, dep.origin_url, dep.origin_tag);
+            } else {
+                RegistryClient::download(dep.name, dep.version);
+            }
         } else {
             std::cout << "Dependency " << dep.name << " (" << dep.version << ") is already in cache.\n";
         }

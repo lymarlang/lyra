@@ -77,33 +77,6 @@ int handle_build(int argc, char** argv) {
 
     args.push_back(entry_point);
 
-    // Basic Incremental Build check
-    if (fs::exists(output_file)) {
-        auto out_time = fs::last_write_time(output_file);
-        auto src_time = fs::last_write_time(entry_point);
-        bool needs_build = (src_time > out_time);
-
-        if (!needs_build) {
-            for (const auto& dep : deps) {
-                // Check if any source files in dependency are newer
-                if (fs::exists(dep.path + "/src")) {
-                    for (const auto& entry : fs::recursive_directory_iterator(dep.path + "/src")) {
-                        if (fs::last_write_time(entry.path()) > out_time) {
-                            needs_build = true;
-                            break;
-                        }
-                    }
-                }
-                if (needs_build) break;
-            }
-        }
-
-        if (!needs_build) {
-            std::cout << "Project '" << meta.name << "' is up to date.\n";
-            return 0;
-        }
-    }
-
     std::cout << "Building project '" << meta.name << "'...\n";
     std::cout << "(Note: Built-in JIT compilation might be unavailable in this environment)\n";
     

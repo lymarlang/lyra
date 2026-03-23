@@ -4,8 +4,17 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
+
+bool is_safe_string(const std::string& s) {
+    if (s.empty()) return false;
+    for (char c : s) {
+        if (!std::isalnum(c) && c != '.' && c != '-' && c != '_') return false;
+    }
+    return true;
+}
 
 int handle_publish(int argc, char** argv) {
     PackageMetadata meta = ConfigParser::parse("lymar.toml");
@@ -18,7 +27,7 @@ int handle_publish(int argc, char** argv) {
     
     // Create a dummy tarball for now
     std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
-    std::string pack_cmd = "tar -czf " + tarball + " src lymar.toml";
+    std::string pack_cmd = "tar -czf \"" + tarball + "\" src lymar.toml";
     std::system(pack_cmd.c_str());
 
     int result = RegistryClient::publish(meta.name, meta.version, tarball);
@@ -46,6 +55,10 @@ int handle_add(int argc, char** argv) {
 
     // Update lymar.toml
     std::ifstream infile("lymar.toml");
+    if (!infile.is_open()) {
+        std::cerr << "error: could not open lymar.toml\n";
+        return 1;
+    }
     std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
     infile.close();
 
@@ -53,7 +66,20 @@ int handle_add(int argc, char** argv) {
         content += "\n[dependencies]\n";
     }
     
-    content += pkg_name + " = \"" + pkg_version + "\"\n";
+    // Use safer check for existing dependency
+    std::string key = pkg_name + " =";
+    size_t pos = content.find("\n" + key);
+    if (pos == std::string::npos && content.substr(0, key.length()) == key) pos = 0;
+    else if (pos != std::string::npos) pos++;
+
+    if (pos != std::string::npos) {
+        std::cout << "Package '" << pkg_name << "' already in lymar.toml. Updating version...\n";
+        size_t end = content.find('\n', pos);
+        if (end == std::string::npos) end = content.length();
+        content.replace(pos, end - pos, pkg_name + " = \"" + pkg_version + "\"");
+    } else {
+        content += pkg_name + " = \"" + pkg_version + "\"\n";
+    }
 
     std::ofstream outfile("lymar.toml");
     outfile << content;
@@ -97,12 +123,16 @@ int handle_link(int argc, char** argv) {
         content += "\n[dependencies]\n";
     }
 
-    // Check if already linked or added
-    if (content.find(target_meta.name + " =") != std::string::npos) {
+    // Check if already linked or added, ensure it's at the start of a line and followed by an equals sign
+    std::string key = target_meta.name + " =";
+    size_t pos = content.find("\n" + key);
+    if (pos == std::string::npos && content.substr(0, key.length()) == key) pos = 0;
+    else if (pos != std::string::npos) pos++; // Move past the newline
+
+    if (pos != std::string::npos) {
         std::cout << "Warning: package '" << target_meta.name << "' already exists in lymar.toml. Overwriting...\n";
-        // Simple overwrite logic (very basic)
-        size_t pos = content.find(target_meta.name + " =");
         size_t end = content.find('\n', pos);
+        if (end == std::string::npos) end = content.length();
         content.replace(pos, end - pos, target_meta.name + " = { path = \"" + target_path.string() + "\" }");
     } else {
         content += target_meta.name + " = { path = \"" + target_path.string() + "\" }\n";
@@ -123,10 +153,15 @@ int handle_pack(int argc, char** argv) {
         return 1;
     }
 
+    if (!is_safe_string(meta.name) || !is_safe_string(meta.version)) {
+        std::cerr << "error: unsafe package name or version in lymar.toml\n";
+        return 1;
+    }
+
     std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
     std::cout << "Packaging " << meta.name << " v" << meta.version << " into " << tarball << "...\n";
 
-    std::string pack_cmd = "tar -czf " + tarball + " src lymar.toml";
+    std::string pack_cmd = "tar -czf \"" + tarball + "\" src lymar.toml";
     int result = std::system(pack_cmd.c_str());
 
     if (result == 0) {
@@ -153,10 +188,10 @@ int handle_install(int argc, char** argv) {
 
     // Extract name and version from filename (basic heuristic) or extract and parse
     // For now, let's extract to a temporary directory to get metadata
-    fs::path temp_dir = fs::temp_directory_path() / "lyra_install_temp";
+    fs::path temp_dir = fs::temp_directory_path() / ("lyra_install_temp_" + std::to_string(getpid()));
     fs::create_directories(temp_dir);
 
-    std::string extract_cmd = "tar -xzf " + tar_path.string() + " -C " + temp_dir.string();
+    std::string extract_cmd = "tar -xzf \"" + tar_path.string() + "\" -C \"" + temp_dir.string() + "\"";
     if (std::system(extract_cmd.c_str()) != 0) {
         std::cerr << "error: failed to extract " << tar_path << "\n";
         fs::remove_all(temp_dir);
@@ -166,6 +201,12 @@ int handle_install(int argc, char** argv) {
     PackageMetadata meta = ConfigParser::parse((temp_dir / "lymar.toml").string());
     if (meta.name.empty()) {
         std::cerr << "error: could not parse lymar.toml in tarball\n";
+        fs::remove_all(temp_dir);
+        return 1;
+    }
+
+    if (!is_safe_string(meta.name) || !is_safe_string(meta.version)) {
+        std::cerr << "error: unsafe package name or version in tarball\n";
         fs::remove_all(temp_dir);
         return 1;
     }
@@ -193,7 +234,12 @@ int handle_install(int argc, char** argv) {
             content += "\n[dependencies]\n";
         }
 
-        if (content.find(meta.name + " =") == std::string::npos) {
+        std::string key = meta.name + " =";
+        size_t pos = content.find("\n" + key);
+        if (pos == std::string::npos && content.substr(0, key.length()) == key) pos = 0;
+        else if (pos != std::string::npos) pos++;
+
+        if (pos == std::string::npos) {
             content += meta.name + " = \"" + meta.version + "\"\n";
             std::ofstream outfile("lymar.toml");
             outfile << content;

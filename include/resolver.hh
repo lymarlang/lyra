@@ -19,6 +19,8 @@ struct ResolvedDependency {
     std::string name;
     std::string version;
     std::string path;
+    std::string origin_url;
+    std::string origin_tag;
 };
 
 class DependencyResolver {
@@ -100,6 +102,8 @@ private:
                 rd.name = name;
                 rd.version = dep_meta.version;
                 rd.path = fs::absolute(dep_path).string();
+                rd.origin_url = dep.git;
+                rd.origin_tag = dep.tag;
                 
                 bool exists = false;
                 for (const auto& r : resolved) {

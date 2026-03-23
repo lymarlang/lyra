@@ -29,6 +29,12 @@ public:
             if (!dep.path.empty()) {
                 file << "path = \"" << dep.path << "\"\n";
             }
+            if (!dep.origin_url.empty()) {
+                file << "url = \"" << dep.origin_url << "\"\n";
+            }
+            if (!dep.origin_tag.empty()) {
+                file << "tag = \"" << dep.origin_tag << "\"\n";
+            }
             file << "\n";
         }
         file.close();
@@ -72,6 +78,8 @@ public:
                 if (key == "name") current_dep.name = value;
                 else if (key == "version") current_dep.version = value;
                 else if (key == "path") current_dep.path = value;
+                else if (key == "url") current_dep.origin_url = value;
+                else if (key == "tag") current_dep.origin_tag = value;
             }
         }
         if (in_package) deps.push_back(current_dep);
