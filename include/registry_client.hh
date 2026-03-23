@@ -1,6 +1,7 @@
 #ifndef REGISTRY_CLIENT_HH
 #define REGISTRY_CLIENT_HH
 
+#include "lyra_common.hh"
 #include <string>
 #include <vector>
 #include <iostream>
@@ -28,7 +29,7 @@ public:
     }
 
     static std::string download(const std::string& name, const std::string& version) {
-        fs::path cache_root = get_cache_dir();
+        fs::path cache_root = Lyra::get_cache_dir();
         fs::path pkg_dir = cache_root / (name + "-" + version);
 
         if (fs::exists(pkg_dir)) {
@@ -57,13 +58,6 @@ public:
     }
 
 private:
-    static fs::path get_cache_dir() {
-        char* home = std::getenv("HOME");
-        if (home) {
-            return fs::path(home) / ".lyra" / "cache";
-        }
-        return fs::current_path() / ".lyra_cache";
-    }
 };
 
 #endif

@@ -2,6 +2,7 @@
 #define FETCH_SYSTEM_HH
 
 #include "config_parser.hh"
+#include "lyra_common.hh"
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -13,7 +14,7 @@ namespace fs = std::filesystem;
 class FetchSystem {
 public:
     static std::string fetch_git(const std::string& name, const std::string& url, const std::string& tag) {
-        fs::path cache_root = get_cache_dir();
+        fs::path cache_root = Lyra::get_cache_dir();
         fs::path pkg_dir = cache_root / (name + "-" + (tag.empty() ? "main" : tag));
 
         if (fs::exists(pkg_dir)) {
@@ -26,9 +27,13 @@ public:
 
         std::string cmd = "git clone --depth 1 ";
         if (!tag.empty()) {
-            cmd += "-b " + tag + " ";
+            cmd += "-b \"" + tag + "\" ";
         }
-        cmd += url + " " + pkg_dir.string() + " 2>/dev/null";
+#ifdef _WIN32
+        cmd += "\"" + url + "\" \"" + pkg_dir.string() + "\" > nul 2>&1";
+#else
+        cmd += "\"" + url + "\" \"" + pkg_dir.string() + "\" 2>/dev/null";
+#endif
 
         int result = std::system(cmd.c_str());
         if (result != 0) {
@@ -37,15 +42,6 @@ public:
         }
 
         return pkg_dir.string();
-    }
-
-private:
-    static fs::path get_cache_dir() {
-        char* home = std::getenv("HOME");
-        if (home) {
-            return fs::path(home) / ".lyra" / "cache";
-        }
-        return fs::current_path() / ".lyra_cache";
     }
 };
 
