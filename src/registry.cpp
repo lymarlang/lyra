@@ -1,20 +1,12 @@
 #include "handlers.hh"
 #include "config_parser.hh"
 #include "registry_client.hh"
+#include "lyra_common.hh"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
-#include <unistd.h>
 
 namespace fs = std::filesystem;
-
-bool is_safe_string(const std::string& s) {
-    if (s.empty()) return false;
-    for (char c : s) {
-        if (!std::isalnum(c) && c != '.' && c != '-' && c != '_') return false;
-    }
-    return true;
-}
 
 int handle_publish(int argc, char** argv) {
     PackageMetadata meta = ConfigParser::parse("lymar.toml");
@@ -62,22 +54,24 @@ int handle_add(int argc, char** argv) {
     std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
     infile.close();
 
-    if (content.find("[dependencies]") == std::string::npos) {
+    size_t deps_section = content.find("[dependencies]");
+    if (deps_section == std::string::npos) {
         content += "\n[dependencies]\n";
+        deps_section = content.find("[dependencies]");
     }
     
-    // Use safer check for existing dependency
+    // Use safer check for existing dependency within the [dependencies] section
     std::string key = pkg_name + " =";
-    size_t pos = content.find("\n" + key);
-    if (pos == std::string::npos && content.substr(0, key.length()) == key) pos = 0;
-    else if (pos != std::string::npos) pos++;
+    size_t pos = content.find("\n" + key, deps_section);
 
     if (pos != std::string::npos) {
+        pos++;
         std::cout << "Package '" << pkg_name << "' already in lymar.toml. Updating version...\n";
         size_t end = content.find('\n', pos);
         if (end == std::string::npos) end = content.length();
         content.replace(pos, end - pos, pkg_name + " = \"" + pkg_version + "\"");
     } else {
+        if (content.empty() || content.back() != '\n') content += "\n";
         content += pkg_name + " = \"" + pkg_version + "\"\n";
     }
 
@@ -119,22 +113,24 @@ int handle_link(int argc, char** argv) {
     std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
     infile.close();
 
-    if (content.find("[dependencies]") == std::string::npos) {
+    size_t deps_section = content.find("[dependencies]");
+    if (deps_section == std::string::npos) {
         content += "\n[dependencies]\n";
+        deps_section = content.find("[dependencies]");
     }
 
-    // Check if already linked or added, ensure it's at the start of a line and followed by an equals sign
+    // Check if already linked or added within the [dependencies] section
     std::string key = target_meta.name + " =";
-    size_t pos = content.find("\n" + key);
-    if (pos == std::string::npos && content.substr(0, key.length()) == key) pos = 0;
-    else if (pos != std::string::npos) pos++; // Move past the newline
+    size_t pos = content.find("\n" + key, deps_section);
 
     if (pos != std::string::npos) {
+        pos++; // Move past the newline
         std::cout << "Warning: package '" << target_meta.name << "' already exists in lymar.toml. Overwriting...\n";
         size_t end = content.find('\n', pos);
         if (end == std::string::npos) end = content.length();
         content.replace(pos, end - pos, target_meta.name + " = { path = \"" + target_path.string() + "\" }");
     } else {
+        if (content.empty() || content.back() != '\n') content += "\n";
         content += target_meta.name + " = { path = \"" + target_path.string() + "\" }\n";
     }
 
@@ -153,7 +149,7 @@ int handle_pack(int argc, char** argv) {
         return 1;
     }
 
-    if (!is_safe_string(meta.name) || !is_safe_string(meta.version)) {
+    if (!Lyra::is_safe_string(meta.name) || !Lyra::is_safe_string(meta.version)) {
         std::cerr << "error: unsafe package name or version in lymar.toml\n";
         return 1;
     }
@@ -188,7 +184,7 @@ int handle_install(int argc, char** argv) {
 
     // Extract name and version from filename (basic heuristic) or extract and parse
     // For now, let's extract to a temporary directory to get metadata
-    fs::path temp_dir = fs::temp_directory_path() / ("lyra_install_temp_" + std::to_string(getpid()));
+    fs::path temp_dir = fs::temp_directory_path() / ("lyra_install_temp_" + std::to_string(Lyra::get_process_id()));
     fs::create_directories(temp_dir);
 
     std::string extract_cmd = "tar -xzf \"" + tar_path.string() + "\" -C \"" + temp_dir.string() + "\"";
@@ -205,22 +201,29 @@ int handle_install(int argc, char** argv) {
         return 1;
     }
 
-    if (!is_safe_string(meta.name) || !is_safe_string(meta.version)) {
+    if (!Lyra::is_safe_string(meta.name) || !Lyra::is_safe_string(meta.version)) {
         std::cerr << "error: unsafe package name or version in tarball\n";
         fs::remove_all(temp_dir);
         return 1;
     }
 
     // Move to cache
-    char* home = std::getenv("HOME");
-    fs::path cache_dir = home ? fs::path(home) / ".lyra" / "cache" : fs::current_path() / ".lyra_cache";
+    fs::path cache_dir = Lyra::get_cache_dir();
     fs::path pkg_cache_path = cache_dir / (meta.name + "-" + meta.version);
 
     fs::create_directories(cache_dir);
     if (fs::exists(pkg_cache_path)) {
         fs::remove_all(pkg_cache_path);
     }
-    fs::rename(temp_dir, pkg_cache_path);
+
+    std::error_code ec;
+    fs::rename(temp_dir, pkg_cache_path, ec);
+    if (ec) {
+        // Fallback for cross-device move
+        fs::create_directories(pkg_cache_path);
+        fs::copy(temp_dir, pkg_cache_path, fs::copy_options::recursive);
+        fs::remove_all(temp_dir);
+    }
 
     std::cout << "Installed " << meta.name << "@" << meta.version << " to cache.\n";
 
@@ -230,16 +233,17 @@ int handle_install(int argc, char** argv) {
         std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
         infile.close();
 
-        if (content.find("[dependencies]") == std::string::npos) {
+        size_t deps_section = content.find("[dependencies]");
+        if (deps_section == std::string::npos) {
             content += "\n[dependencies]\n";
+            deps_section = content.find("[dependencies]");
         }
 
         std::string key = meta.name + " =";
-        size_t pos = content.find("\n" + key);
-        if (pos == std::string::npos && content.substr(0, key.length()) == key) pos = 0;
-        else if (pos != std::string::npos) pos++;
+        size_t pos = content.find("\n" + key, deps_section);
 
         if (pos == std::string::npos) {
+            if (content.empty() || content.back() != '\n') content += "\n";
             content += meta.name + " = \"" + meta.version + "\"\n";
             std::ofstream outfile("lymar.toml");
             outfile << content;

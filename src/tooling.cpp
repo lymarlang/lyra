@@ -1,6 +1,7 @@
 #include "handlers.hh"
 #include "resolver.hh"
 #include "process_helper.hh"
+#include "lyra_common.hh"
 #include <iostream>
 #include <filesystem>
 #include <vector>
@@ -109,8 +110,7 @@ void print_tree_recursive(const std::string& current_path, int level, std::set<s
             dep_path = (fs::path(current_path) / dep.path).string();
         } else if (!dep.version.empty()) {
              // Basic heuristic for cached dependency path
-             char* home = std::getenv("HOME");
-             fs::path cache_dir = home ? fs::path(home) / ".lyra" / "cache" : fs::current_path() / ".lyra_cache";
+             fs::path cache_dir = Lyra::get_cache_dir();
              // Note: this is a bit flaky without exact version resolution here
              // We'd ideally use the resolver, but this is for 'tree' visualization.
              // For a better implementation, we should use DependencyResolver::resolve output.
@@ -163,8 +163,7 @@ bool find_path_why(const std::string& current_path, const std::string& target_na
         if (!dep.path.empty()) {
             dep_path = (fs::path(current_path) / dep.path).string();
         } else if (!dep.version.empty()) {
-             char* home = std::getenv("HOME");
-             fs::path cache_dir = home ? fs::path(home) / ".lyra" / "cache" : fs::current_path() / ".lyra_cache";
+             fs::path cache_dir = Lyra::get_cache_dir();
              // Find matching version in cache
              for (const auto& entry : fs::directory_iterator(cache_dir)) {
                  if (entry.path().filename().string().find(name + "-") == 0) {
@@ -216,9 +215,13 @@ int handle_clean() {
     std::cout << "Cleaning project '" << meta.name << "'...\n";
 
     // Remove binary
-    if (fs::exists(meta.name)) {
-        fs::remove(meta.name);
-        std::cout << "Removed binary: " << meta.name << "\n";
+    std::string bin_name = meta.name;
+#ifdef _WIN32
+    bin_name += ".exe";
+#endif
+    if (fs::exists(bin_name)) {
+        fs::remove(bin_name);
+        std::cout << "Removed binary: " << bin_name << "\n";
     }
 
     // Remove obj directory
@@ -238,8 +241,7 @@ int handle_clean() {
 }
 
 int handle_cache_clear() {
-    char* home = std::getenv("HOME");
-    fs::path cache_dir = home ? fs::path(home) / ".lyra" / "cache" : fs::current_path() / ".lyra_cache";
+    fs::path cache_dir = Lyra::get_cache_dir();
 
     if (fs::exists(cache_dir)) {
         std::cout << "Clearing lyra cache at " << cache_dir << "...\n";
@@ -254,8 +256,7 @@ int handle_cache_clear() {
 
 int handle_env() {
     std::cout << "Lyra Environment:\n";
-    char* home = std::getenv("HOME");
-    std::cout << "  Cache Directory: " << (home ? fs::path(home) / ".lyra" / "cache" : fs::current_path() / ".lyra_cache") << "\n";
+    std::cout << "  Cache Directory: " << Lyra::get_cache_dir().string() << "\n";
 
     char* root = std::getenv("REPOROOT");
     if (root) std::cout << "  REPOROOT: " << root << "\n";
