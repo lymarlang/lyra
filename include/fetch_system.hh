@@ -26,9 +26,9 @@ public:
 
         std::string cmd = "git clone --depth 1 ";
         if (!tag.empty()) {
-            cmd += "-b " + tag + " ";
+            cmd += "-b \"" + tag + "\" ";
         }
-        cmd += url + " " + pkg_dir.string() + " 2>/dev/null";
+        cmd += "\"" + url + "\" \"" + pkg_dir.string() + "\" 2>/dev/null";
 
         int result = std::system(cmd.c_str());
         if (result != 0) {

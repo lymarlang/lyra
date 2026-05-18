@@ -20,7 +20,7 @@ int handle_publish(int argc, char** argv) {
     
     // Create a dummy tarball for now
     std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
-    std::string pack_cmd = "tar -czf " + tarball + " src lymar.nol";
+    std::string pack_cmd = "tar -czf \"" + tarball + "\" src lymar.nol";
     std::system(pack_cmd.c_str());
 
     int result = RegistryClient::publish(meta.name, meta.version, tarball);

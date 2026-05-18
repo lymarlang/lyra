@@ -64,10 +64,10 @@ class PackageController extends Controller
     public function publish(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string',
-            'version' => 'required|string',
-            'file' => 'required|file',
-            'description' => 'nullable|string',
+            'name' => 'required|string|regex:/^[a-zA-Z0-9._-]+$/|max:255',
+            'version' => 'required|string|regex:/^[a-zA-Z0-9._-]+$/|max:50',
+            'file' => 'required|file|max:10240', // Max 10MB
+            'description' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
