@@ -1,6 +1,7 @@
 #include "handlers.hh"
 #include "config_parser.hh"
 #include "registry_client.hh"
+#include "nol.hh"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -16,14 +17,12 @@ int handle_publish(int argc, char** argv) {
 
     std::cout << "Packaging project '" << meta.name << "' version " << meta.version << "...\n";
     
-    // Create a dummy tarball for now
     std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
     std::string pack_cmd = "tar -czf " + tarball + " src lymar.toml";
     std::system(pack_cmd.c_str());
 
     int result = RegistryClient::publish(meta.name, meta.version, tarball);
     
-    // Cleanup
     fs::remove(tarball);
 
     if (result == 0) {
@@ -44,20 +43,21 @@ int handle_add(int argc, char** argv) {
 
     std::cout << "Adding dependency '" << pkg_name << "' (" << pkg_version << ")...\n";
 
-    // Update lymar.toml
-    std::ifstream infile("lymar.toml");
-    std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
-    infile.close();
-
-    if (content.find("[dependencies]") == std::string::npos) {
-        content += "\n[dependencies]\n";
+    PackageMetadata meta = ConfigParser::parse("lymar.toml");
+    if (meta.name.empty()) {
+        // Fallback or create new if not exists
+        meta.name = fs::current_path().filename().string();
+        meta.version = "0.1.0";
     }
-    
-    content += pkg_name + " = \"" + pkg_version + "\"\n";
 
-    std::ofstream outfile("lymar.toml");
-    outfile << content;
-    outfile.close();
+    Dependency dep;
+    dep.name = pkg_name;
+    dep.version = pkg_version;
+    meta.dependencies[pkg_name] = dep;
+
+    NolDocument doc;
+    doc.get_metadata() = meta;
+    doc.save("lymar.toml");
 
     std::cout << "Updated lymar.toml. Run 'lyra update' to fetch dependencies.\n";
     return 0;

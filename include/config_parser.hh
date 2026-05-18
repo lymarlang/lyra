@@ -1,6 +1,7 @@
 #ifndef CONFIG_PARSER_HH
 #define CONFIG_PARSER_HH
 
+#include "nol.hh"
 #include <string>
 #include <map>
 #include <fstream>
@@ -8,23 +9,6 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
-
-struct Dependency {
-    std::string name;
-    std::string version;
-    std::string path;
-    std::string git;
-    std::string tag;
-    std::vector<std::string> features;
-};
-
-struct PackageMetadata {
-    std::string name;
-    std::string version;
-    std::map<std::string, Dependency> dependencies;
-    std::map<std::string, std::vector<std::string>> features;
-    std::vector<std::string> enabled_features;
-};
 
 class ConfigParser {
 public:
@@ -94,6 +78,24 @@ public:
                         size_t s2 = value.find('\"', s1 + 1);
                         if (s1 != std::string::npos && s2 != std::string::npos) {
                             dep.path = value.substr(s1 + 1, s2 - s1 - 1);
+                        }
+                    }
+
+                    size_t git_pos = value.find("git");
+                    if (git_pos != std::string::npos) {
+                        size_t s1 = value.find('\"', git_pos);
+                        size_t s2 = value.find('\"', s1 + 1);
+                        if (s1 != std::string::npos && s2 != std::string::npos) {
+                            dep.git = value.substr(s1 + 1, s2 - s1 - 1);
+                        }
+                    }
+
+                    size_t tag_pos = value.find("tag");
+                    if (tag_pos != std::string::npos) {
+                        size_t s1 = value.find('\"', tag_pos);
+                        size_t s2 = value.find('\"', s1 + 1);
+                        if (s1 != std::string::npos && s2 != std::string::npos) {
+                            dep.tag = value.substr(s1 + 1, s2 - s1 - 1);
                         }
                     }
                     

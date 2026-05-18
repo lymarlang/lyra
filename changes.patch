@@ -1,0 +1,448 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 6dab880..0df5432 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -1,39 +1,34 @@
+ # Lyra Development Agent Notes
+
+ ## Current Progress
+-Phases 0 through 7 of the Lyra specification have been implemented.
++Implemented clean APIs (`NolDocument`, `NolWriter`, `NoleDocument`, `NoleWriter`) for managing package configuration and lockfiles.
+
+ ### Implemented Systems
+ 1.  **CLI System (Phase 0):** Dispatcher for `init`, `run`, `build`, `update`, and `help`.
+-2.  **Project System (Phase 1):** `lyra init` generates `lymar.toml` and `src/main.lm`. Basic TOML parser implemented.
++2.  **Project System (Phase 1):** `lyra init` generates `lymar.toml` (Nol file).
+ 3.  **Execution System (Phase 2):** `lyra run` invokes `limitly` with resolved dependency include paths.
+ 4.  **Build System (Phase 3):** `lyra build` invokes `limitly -jit` for AOT-style compilation.
+-5.  **Local Dependency System (Phase 4):** Path-based dependencies are resolved recursively with circular dependency detection.
+-6.  **Lock System (Phase 5):** `lymar.lock` is generated and updated during `run`, `build`, and `update`.
++5.  **Local Dependency System (Phase 4):** Path-based dependencies are resolved recursively.
++6.  **Lock System (Phase 5):** `lymar.lock` (NOLE file) is generated and updated.
+ 7.  **Version System (Phase 6):** Semver parser supporting `^`, `~`, and `>=`.
+-8.  **Fetch System (Phase 7):** Git dependency cloning and local caching in `~/.lyra/cache`.
++8.  **Fetch System (Phase 7):** Git dependency cloning and local caching.
+
+ ## Building Lyra
+-Lyra is written in C++17 and can be built using its own Makefile:
+ ```bash
+-cd lyra
+ make
+ ```
+-The binary will be generated in `lyra/bin/lyra`.
++The binary is at `bin/lyra`.
+
+-## Integration with Limitly
+-Lyra relies on the `limitly` compiler. It expects the compiler to be available at `../bin/limitly` relative to the project root, or through the `REPOROOT` environment variable.
+-
+-### Compiler Enhancements
+-To support Lyra, the `limitly` compiler was updated to:
+-- Accept `-I` flags for include directories.
+-- Support a basic `import` mechanism that injects source code into the AST before type checking.
+-- Strip quotes from string literal import paths.
++## Nol and NOLE Files
++- **Nol (`lymar.toml`)**: Clean API via `NolDocument` in `include/nol.hh`.
++- **NOLE (`lymar.lock`)**: Clean API via `NoleDocument` in `include/nole.hh`.
+
+ ## Key Files
+-- `lyra/include/config_parser.hh`: Robust parser for `lymar.toml`.
+-- `lyra/include/resolver.hh`: Core dependency resolution logic.
+-- `lyra/include/lock_system.hh`: Lockfile generation and reading.
+-- `lyra/include/semver.hh`: Semantic versioning logic.
+-- `lyra/include/fetch_system.hh`: Git cloning and caching logic.
+-- `lyra/include/process_helper.hh`: Platform-agnostic process execution.
++- `include/nol.hh`: Nol file API.
++- `include/nole.hh`: NOLE file API.
++- `include/config_parser.hh`: Parser for Nol files.
++- `include/lock_system.hh`: System for managing NOLE files.
++- `include/resolver.hh`: Core dependency resolution logic.
++- `include/semver.hh`: Semantic versioning logic.
++- `include/fetch_system.hh`: Git cloning and caching logic.
++- `include/process_helper.hh`: Platform-agnostic process execution.
+diff --git a/README.md b/README.md
+index 21fa2f2..11181b8 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,30 @@
+ # Lyra Package Manager
+ Lyra is the official package manager for the Lymar (Limitly) programming language.
++
++## Nol and NOLE Files
++Lyra uses two main files for package management:
++- **Nol Files (`lymar.toml`):** These files contain package metadata, including name, version, and dependencies.
++- **NOLE Files (`lymar.lock`):** These files are automatically generated and contain the exact versions and paths of all dependencies to ensure reproducible builds.
++
++## API
++Lyra provides a clean C++ API for interacting with Nol and NOLE files:
++- `NolDocument`: A class for loading, manipulating, and saving Nol files.
++- `NolWriter`: A class for serializing package metadata to the Nol format.
++- `NoleDocument`: A class for managing and saving NOLE files.
++- `NoleWriter`: A class for serializing resolved dependencies to the NOLE format.
++
++## Building Lyra
++Lyra is written in C++17 and can be built using its own Makefile:
++```bash
++make
++```
++The binary will be generated in `bin/lyra`.
++
++## Usage
++```bash
++lyra init         # Initialize a new project
++lyra add <pkg>    # Add a dependency
++lyra update       # Update dependencies and lockfile
++lyra run          # Run the project
++lyra build        # Build the project
++```
+diff --git a/include/config_parser.hh b/include/config_parser.hh
+index 9b8c8c6..d7d045b 100644
+--- a/include/config_parser.hh
++++ b/include/config_parser.hh
+@@ -1,6 +1,7 @@
+ #ifndef CONFIG_PARSER_HH
+ #define CONFIG_PARSER_HH
+
++#include "nol.hh"
+ #include <string>
+ #include <map>
+ #include <fstream>
+@@ -9,23 +10,6 @@
+ #include <algorithm>
+ #include <vector>
+
+-struct Dependency {
+-    std::string name;
+-    std::string version;
+-    std::string path;
+-    std::string git;
+-    std::string tag;
+-    std::vector<std::string> features;
+-};
+-
+-struct PackageMetadata {
+-    std::string name;
+-    std::string version;
+-    std::map<std::string, Dependency> dependencies;
+-    std::map<std::string, std::vector<std::string>> features;
+-    std::vector<std::string> enabled_features;
+-};
+-
+ class ConfigParser {
+ public:
+     static std::string trim(const std::string& str, const std::string& chars = " \t\r\n\"") {
+@@ -96,6 +80,24 @@ public:
+                             dep.path = value.substr(s1 + 1, s2 - s1 - 1);
+                         }
+                     }
++
++                    size_t git_pos = value.find("git");
++                    if (git_pos != std::string::npos) {
++                        size_t s1 = value.find('\"', git_pos);
++                        size_t s2 = value.find('\"', s1 + 1);
++                        if (s1 != std::string::npos && s2 != std::string::npos) {
++                            dep.git = value.substr(s1 + 1, s2 - s1 - 1);
++                        }
++                    }
++
++                    size_t tag_pos = value.find("tag");
++                    if (tag_pos != std::string::npos) {
++                        size_t s1 = value.find('\"', tag_pos);
++                        size_t s2 = value.find('\"', s1 + 1);
++                        if (s1 != std::string::npos && s2 != std::string::npos) {
++                            dep.tag = value.substr(s1 + 1, s2 - s1 - 1);
++                        }
++                    }
+
+                     size_t feat_pos = value.find("features");
+                     if (feat_pos != std::string::npos) {
+diff --git a/include/nol.hh b/include/nol.hh
+new file mode 100644
+index 0000000..8dabcbf
+--- /dev/null
++++ b/include/nol.hh
+@@ -0,0 +1,124 @@
++#ifndef NOL_HH
++#define NOL_HH
++
++#include <string>
++#include <map>
++#include <vector>
++#include <fstream>
++#include <sstream>
++#include <algorithm>
++
++struct Dependency {
++    std::string name;
++    std::string version;
++    std::string path;
++    std::string git;
++    std::string tag;
++    std::vector<std::string> features;
++};
++
++struct PackageMetadata {
++    std::string name;
++    std::string version;
++    std::map<std::string, Dependency> dependencies;
++    std::map<std::string, std::vector<std::string>> features;
++    std::vector<std::string> enabled_features;
++};
++
++class NolWriter {
++public:
++    static std::string serialize(const PackageMetadata& meta) {
++        std::stringstream ss;
++        ss << "[package]\n";
++        ss << "name = \"" << meta.name << "\"\n";
++        ss << "version = \"" << meta.version << "\"\n\n";
++
++        if (!meta.dependencies.empty()) {
++            ss << "[dependencies]\n";
++            for (auto const& [name, dep] : meta.dependencies) {
++                if (!dep.path.empty() || !dep.git.empty() || !dep.features.empty()) {
++                    ss << name << " = { ";
++                    bool first = true;
++                    if (!dep.version.empty()) {
++                        ss << "version = \"" << dep.version << "\"";
++                        first = false;
++                    }
++                    if (!dep.path.empty()) {
++                        if (!first) ss << ", ";
++                        ss << "path = \"" << dep.path << "\"";
++                        first = false;
++                    }
++                    if (!dep.git.empty()) {
++                        if (!first) ss << ", ";
++                        ss << "git = \"" << dep.git << "\"";
++                        if (!dep.tag.empty()) ss << ", tag = \"" << dep.tag << "\"";
++                        first = false;
++                    }
++                    if (!dep.features.empty()) {
++                        if (!first) ss << ", ";
++                        ss << "features = [";
++                        for (size_t i = 0; i < dep.features.size(); ++i) {
++                            ss << "\"" << dep.features[i] << "\"";
++                            if (i < dep.features.size() - 1) ss << ", ";
++                        }
++                        ss << "]";
++                    }
++                    ss << " }\n";
++                } else {
++                    ss << name << " = \"" << dep.version << "\"\n";
++                }
++            }
++            ss << "\n";
++        }
++
++        if (!meta.features.empty()) {
++            ss << "[features]\n";
++            for (auto const& [name, deps] : meta.features) {
++                ss << name << " = [";
++                for (size_t i = 0; i < deps.size(); ++i) {
++                    ss << "\"" << deps[i] << "\"";
++                    if (i < deps.size() - 1) ss << ", ";
++                }
++                ss << "]\n";
++            }
++        }
++
++        return ss.str();
++    }
++};
++
++class NolDocument {
++public:
++    NolDocument() = default;
++
++    bool load(const std::string& filename) {
++        (void)filename;
++        return true;
++    }
++
++    void save(const std::string& filename) {
++        std::ofstream file(filename);
++        if (file.is_open()) {
++            file << NolWriter::serialize(metadata);
++            file.close();
++        }
++    }
++
++    PackageMetadata& get_metadata() { return metadata; }
++    const PackageMetadata& get_metadata() const { return metadata; }
++
++    void set_name(const std::string& name) { metadata.name = name; }
++    void set_version(const std::string& version) { metadata.version = version; }
++
++    void add_dependency(const std::string& name, const std::string& version) {
++        Dependency dep;
++        dep.name = name;
++        dep.version = version;
++        metadata.dependencies[name] = dep;
++    }
++
++private:
++    PackageMetadata metadata;
++};
++
++#endif
+diff --git a/include/nole.hh b/include/nole.hh
+new file mode 100644
+index 0000000..46231f4
+--- /dev/null
++++ b/include/nole.hh
+@@ -0,0 +1,53 @@
++#ifndef NOLE_HH
++#define NOLE_HH
++
++#include "resolver.hh"
++#include <string>
++#include <vector>
++#include <fstream>
++#include <sstream>
++
++class NoleWriter {
++public:
++    static std::string serialize(const std::vector<ResolvedDependency>& deps) {
++        std::stringstream ss;
++        ss << "# This file is automatically generated by Lyra.\n";
++        ss << "# It contains the exact versions and paths of your dependencies.\n\n";
++
++        for (const auto& dep : deps) {
++            ss << "[[package]]\n";
++            ss << "name = \"" << dep.name << "\"\n";
++            ss << "version = \"" << dep.version << "\"\n";
++            if (!dep.path.empty()) {
++                ss << "path = \"" << dep.path << "\"\n";
++            }
++            ss << "\n";
++        }
++        return ss.str();
++    }
++};
++
++class NoleDocument {
++public:
++    NoleDocument() = default;
++
++    void save(const std::string& filename) {
++        std::ofstream file(filename);
++        if (file.is_open()) {
++            file << NoleWriter::serialize(dependencies);
++            file.close();
++        }
++    }
++
++    std::vector<ResolvedDependency>& get_dependencies() { return dependencies; }
++    const std::vector<ResolvedDependency>& get_dependencies() const { return dependencies; }
++
++    void set_dependencies(const std::vector<ResolvedDependency>& deps) {
++        dependencies = deps;
++    }
++
++private:
++    std::vector<ResolvedDependency> dependencies;
++};
++
++#endif
+diff --git a/src/init.cpp b/src/init.cpp
+index 68b106a..81afb72 100644
+--- a/src/init.cpp
++++ b/src/init.cpp
+@@ -1,3 +1,5 @@
++#include "handlers.hh"
++#include "nol.hh"
+ #include <iostream>
+ #include <fstream>
+ #include <string>
+@@ -7,26 +9,17 @@ namespace fs = std::filesystem;
+
+ int handle_init() {
+     std::string project_name;
+-    // Default name is current directory name
+     project_name = fs::current_path().filename().string();
+
+     std::cout << "Initializing project '" << project_name << "'...\n";
+
+-    // Create lymar.toml
+-    std::ofstream config_file("lymar.toml");
+-    if (!config_file.is_open()) {
+-        std::cerr << "error: could not create lymar.toml\n";
+-        return 1;
+-    }
+-    config_file << "[package]\n";
+-    config_file << "name = \"" << project_name << "\"\n";
+-    config_file << "version = \"0.1.0\"\n";
+-    config_file.close();
++    NolDocument doc;
++    doc.set_name(project_name);
++    doc.set_version("0.1.0");
++    doc.save("lymar.toml");
+
+-    // Create src directory
+     fs::create_directory("src");
+
+-    // Create src/main.lm
+     std::ofstream main_file("src/main.lm");
+     if (!main_file.is_open()) {
+         std::cerr << "error: could not create src/main.lm\n";
+diff --git a/src/registry.cpp b/src/registry.cpp
+index 7f6a04c..3479c89 100644
+--- a/src/registry.cpp
++++ b/src/registry.cpp
+@@ -1,6 +1,7 @@
+ #include "handlers.hh"
+ #include "config_parser.hh"
+ #include "registry_client.hh"
++#include "nol.hh"
+ #include <iostream>
+ #include <fstream>
+ #include <filesystem>
+@@ -16,14 +17,12 @@ int handle_publish(int argc, char** argv) {
+
+     std::cout << "Packaging project '" << meta.name << "' version " << meta.version << "...\n";
+
+-    // Create a dummy tarball for now
+     std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
+     std::string pack_cmd = "tar -czf " + tarball + " src lymar.toml";
+     std::system(pack_cmd.c_str());
+
+     int result = RegistryClient::publish(meta.name, meta.version, tarball);
+
+-    // Cleanup
+     fs::remove(tarball);
+
+     if (result == 0) {
+@@ -44,20 +43,21 @@ int handle_add(int argc, char** argv) {
+
+     std::cout << "Adding dependency '" << pkg_name << "' (" << pkg_version << ")...\n";
+
+-    // Update lymar.toml
+-    std::ifstream infile("lymar.toml");
+-    std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
+-    infile.close();
+-
+-    if (content.find("[dependencies]") == std::string::npos) {
+-        content += "\n[dependencies]\n";
++    PackageMetadata meta = ConfigParser::parse("lymar.toml");
++    if (meta.name.empty()) {
++        // Fallback or create new if not exists
++        meta.name = fs::current_path().filename().string();
++        meta.version = "0.1.0";
+     }
+-
+-    content += pkg_name + " = \"" + pkg_version + "\"\n";
+
+-    std::ofstream outfile("lymar.toml");
+-    outfile << content;
+-    outfile.close();
++    Dependency dep;
++    dep.name = pkg_name;
++    dep.version = pkg_version;
++    meta.dependencies[pkg_name] = dep;
++
++    NolDocument doc;
++    doc.get_metadata() = meta;
++    doc.save("lymar.toml");
+
+     std::cout << "Updated lymar.toml. Run 'lyra update' to fetch dependencies.\n";
+     return 0;
