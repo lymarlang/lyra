@@ -35,7 +35,8 @@ public:
         file.close();
 
         try {
-            NOL::Value root = NOL::parse(content);
+            NOL::Document doc = NOL::parse(content);
+            const NOL::Value& root = doc.data();
 
             if (root.isObject()) {
                 const auto& root_obj = root.asObject();

@@ -15,16 +15,14 @@ int handle_init() {
     std::cout << "Initializing project '" << project_name << "'...\n";
 
     // Create lymar.nol
-    NOL::Value root(NOL::Object{});
-    NOL::Object pkg;
-    pkg["name"] = project_name;
-    pkg["version"] = "0.1.0";
-    root["package"] = NOL::Value(pkg);
-    root["dependencies"] = NOL::Value(NOL::Object{});
+    NOL::Builder builder;
+    builder.set("package.name", NOL::Value(project_name));
+    builder.set("package.version", NOL::Value("0.1.0"));
+    builder.set("dependencies", NOL::Value(NOL::Object{}));
 
     std::ofstream out("lymar.nol");
     if (out.is_open()) {
-        out << root.dump(2, 0, true);
+        out << builder.build().dump(2);
         out.close();
     } else {
         std::cerr << "error: could not create lymar.nol\n";

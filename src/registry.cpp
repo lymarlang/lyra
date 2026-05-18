@@ -47,38 +47,36 @@ int handle_add(int argc, char** argv) {
     std::cout << "Adding dependency '" << pkg_name << "' (" << pkg_version << ")...\n";
 
     // Update lymar.nol using NOL library
-    NOL::Value root;
+    NOL::Object root;
     std::ifstream file("lymar.nol");
     if (file.is_open()) {
         std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         file.close();
         try {
-            root = NOL::parse(content);
+            NOL::Document doc = NOL::parse(content);
+            if (doc.data().isObject()) {
+                root = doc.data().asObject();
+            }
         } catch (...) {
-            root = NOL::Value(NOL::Object{});
         }
-    } else {
-        root = NOL::Value(NOL::Object{});
     }
 
-    if (!root.isObject()) root = NOL::Value(NOL::Object{});
-    
-    if (!root.asObject().count("dependencies")) {
-        root.asObject()["dependencies"] = NOL::Value(NOL::Object{});
+    if (root.find("dependencies") == root.end() || !root["dependencies"].isObject()) {
+        root["dependencies"] = NOL::Value(NOL::Object{});
     }
 
-    if (!root.asObject().count("package")) {
+    if (root.find("package") == root.end() || !root["package"].isObject()) {
         NOL::Object pkg;
         pkg["name"] = fs::current_path().filename().string();
         pkg["version"] = "0.1.0";
-        root.asObject()["package"] = NOL::Value(pkg);
+        root["package"] = NOL::Value(pkg);
     }
 
-    root.asObject()["dependencies"].asObject()[pkg_name] = NOL::Value(pkg_version);
+    root["dependencies"].asObject()[pkg_name] = NOL::Value(pkg_version);
 
     std::ofstream out("lymar.nol");
     if (out.is_open()) {
-        out << root.dump(2, 0, true);
+        out << NOL::Value(root).dump(2, 0, true);
         out.close();
     } else {
         std::cerr << "error: could not update lymar.nol\n";
