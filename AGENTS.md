@@ -5,7 +5,7 @@ Phases 0 through 7 of the Lyra specification have been implemented.
 
 ### Implemented Systems
 1.  **CLI System (Phase 0):** Dispatcher for `init`, `run`, `build`, `update`, and `help`.
-2.  **Project System (Phase 1):** `lyra init` generates `lymar.toml` and `src/main.lm`. Basic TOML parser implemented.
+2.  **Project System (Phase 1):** `lyra init` generates `lymar.nol` and `src/main.lm`. Basic NOL parser implemented.
 3.  **Execution System (Phase 2):** `lyra run` invokes `limitly` with resolved dependency include paths.
 4.  **Build System (Phase 3):** `lyra build` invokes `limitly -jit` for AOT-style compilation.
 5.  **Local Dependency System (Phase 4):** Path-based dependencies are resolved recursively with circular dependency detection.
@@ -31,7 +31,7 @@ To support Lyra, the `limitly` compiler was updated to:
 - Strip quotes from string literal import paths.
 
 ## Key Files
-- `lyra/include/config_parser.hh`: Robust parser for `lymar.toml`.
+- `lyra/include/config_parser.hh`: Robust parser for `lymar.nol`.
 - `lyra/include/resolver.hh`: Core dependency resolution logic.
 - `lyra/include/lock_system.hh`: Lockfile generation and reading.
 - `lyra/include/semver.hh`: Semantic versioning logic.

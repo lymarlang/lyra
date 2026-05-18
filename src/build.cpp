@@ -12,9 +12,9 @@
 namespace fs = std::filesystem;
 
 int handle_build(int argc, char** argv) {
-    PackageMetadata meta = ConfigParser::parse("lymar.toml");
+    PackageMetadata meta = ConfigParser::parse("lymar.nol");
     if (meta.name.empty()) {
-        std::cerr << "error: could not find lymar.toml or package name\n";
+        std::cerr << "error: could not find lymar.nol or package name\n";
         return 1;
     }
 

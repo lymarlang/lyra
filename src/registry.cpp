@@ -1,16 +1,18 @@
 #include "handlers.hh"
 #include "config_parser.hh"
 #include "registry_client.hh"
+#include "nol.hpp"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <iterator>
 
 namespace fs = std::filesystem;
 
 int handle_publish(int argc, char** argv) {
-    PackageMetadata meta = ConfigParser::parse("lymar.toml");
+    PackageMetadata meta = ConfigParser::parse("lymar.nol");
     if (meta.name.empty()) {
-        std::cerr << "error: could not find lymar.toml or package name\n";
+        std::cerr << "error: could not find lymar.nol or package name\n";
         return 1;
     }
 
@@ -18,7 +20,7 @@ int handle_publish(int argc, char** argv) {
     
     // Create a dummy tarball for now
     std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
-    std::string pack_cmd = "tar -czf " + tarball + " src lymar.toml";
+    std::string pack_cmd = "tar -czf " + tarball + " src lymar.nol";
     std::system(pack_cmd.c_str());
 
     int result = RegistryClient::publish(meta.name, meta.version, tarball);
@@ -44,21 +46,45 @@ int handle_add(int argc, char** argv) {
 
     std::cout << "Adding dependency '" << pkg_name << "' (" << pkg_version << ")...\n";
 
-    // Update lymar.toml
-    std::ifstream infile("lymar.toml");
-    std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
-    infile.close();
-
-    if (content.find("[dependencies]") == std::string::npos) {
-        content += "\n[dependencies]\n";
+    // Update lymar.nol using NOL library
+    NOL::Value root;
+    std::ifstream file("lymar.nol");
+    if (file.is_open()) {
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        file.close();
+        try {
+            root = NOL::parse(content);
+        } catch (...) {
+            root = NOL::Value(NOL::Object{});
+        }
+    } else {
+        root = NOL::Value(NOL::Object{});
     }
+
+    if (!root.isObject()) root = NOL::Value(NOL::Object{});
     
-    content += pkg_name + " = \"" + pkg_version + "\"\n";
+    if (!root.asObject().count("dependencies")) {
+        root.asObject()["dependencies"] = NOL::Value(NOL::Object{});
+    }
 
-    std::ofstream outfile("lymar.toml");
-    outfile << content;
-    outfile.close();
+    if (!root.asObject().count("package")) {
+        NOL::Object pkg;
+        pkg["name"] = fs::current_path().filename().string();
+        pkg["version"] = "0.1.0";
+        root.asObject()["package"] = NOL::Value(pkg);
+    }
 
-    std::cout << "Updated lymar.toml. Run 'lyra update' to fetch dependencies.\n";
+    root.asObject()["dependencies"].asObject()[pkg_name] = NOL::Value(pkg_version);
+
+    std::ofstream out("lymar.nol");
+    if (out.is_open()) {
+        out << root.dump(2, 0, true);
+        out.close();
+    } else {
+        std::cerr << "error: could not update lymar.nol\n";
+        return 1;
+    }
+
+    std::cout << "Updated lymar.nol. Run 'lyra update' to fetch dependencies.\n";
     return 0;
 }

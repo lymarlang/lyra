@@ -1,0 +1,5 @@
+package: [{
+      name: "foo",
+      path: "/abs/path/to/foo",
+      version: "1.2.3"
+    }]

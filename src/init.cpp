@@ -1,3 +1,5 @@
+#include "handlers.hh"
+#include "nol.hpp"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -12,16 +14,22 @@ int handle_init() {
     
     std::cout << "Initializing project '" << project_name << "'...\n";
 
-    // Create lymar.toml
-    std::ofstream config_file("lymar.toml");
-    if (!config_file.is_open()) {
-        std::cerr << "error: could not create lymar.toml\n";
+    // Create lymar.nol
+    NOL::Value root(NOL::Object{});
+    NOL::Object pkg;
+    pkg["name"] = project_name;
+    pkg["version"] = "0.1.0";
+    root["package"] = NOL::Value(pkg);
+    root["dependencies"] = NOL::Value(NOL::Object{});
+
+    std::ofstream out("lymar.nol");
+    if (out.is_open()) {
+        out << root.dump(2, 0, true);
+        out.close();
+    } else {
+        std::cerr << "error: could not create lymar.nol\n";
         return 1;
     }
-    config_file << "[package]\n";
-    config_file << "name = \"" << project_name << "\"\n";
-    config_file << "version = \"0.1.0\"\n";
-    config_file.close();
 
     // Create src directory
     fs::create_directory("src");

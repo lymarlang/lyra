@@ -5,7 +5,7 @@ This document tracks the changes made during the development of Lyra, the Lymar 
 ## 2024-03-22
 - **New Project:** Created the `lyra/` directory with a standalone C++ project structure.
 - **CLI Dispatcher:** Implemented a basic CLI in `lyra/src/main.cpp` supporting core commands.
-- **Project Initialization:** Implemented `lyra init` to bootstrap new projects with `lymar.toml`.
+- **Project Initialization:** Implemented `lyra init` to bootstrap new projects with `lymar.nol`.
 - **Dependency Resolution:**
     - Developed a recursive dependency resolver in `lyra/include/resolver.hh`.
     - Added support for path-based and Git-based dependencies.

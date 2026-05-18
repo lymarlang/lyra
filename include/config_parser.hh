@@ -1,13 +1,12 @@
 #ifndef CONFIG_PARSER_HH
 #define CONFIG_PARSER_HH
 
+#include "nol.hpp"
 #include <string>
 #include <map>
-#include <fstream>
-#include <sstream>
-#include <iostream>
-#include <algorithm>
 #include <vector>
+#include <fstream>
+#include <iterator>
 
 struct Dependency {
     std::string name;
@@ -28,124 +27,75 @@ struct PackageMetadata {
 
 class ConfigParser {
 public:
-    static std::string trim(const std::string& str, const std::string& chars = " \t\r\n\"") {
-        size_t first = str.find_first_not_of(chars);
-        if (first == std::string::npos) return "";
-        size_t last = str.find_last_not_of(chars);
-        return str.substr(first, (last - first + 1));
-    }
-
     static PackageMetadata parse(const std::string& filename) {
-        std::ifstream file(filename);
         PackageMetadata meta;
+        std::ifstream file(filename);
         if (!file.is_open()) return meta;
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        file.close();
 
-        std::string line;
-        bool in_package_section = false;
-        bool in_dependencies_section = false;
-        bool in_features_section = false;
-        while (std::getline(file, line)) {
-            size_t comment_pos = line.find('#');
-            if (comment_pos != std::string::npos) line = line.substr(0, comment_pos);
-            
-            std::string trimmed_line = trim(line, " \t\r\n");
-            if (trimmed_line.empty()) continue;
+        try {
+            NOL::Value root = NOL::parse(content);
 
-            if (trimmed_line == "[package]") {
-                in_package_section = true;
-                in_dependencies_section = false;
-                in_features_section = false;
-                continue;
-            } else if (trimmed_line == "[dependencies]") {
-                in_dependencies_section = true;
-                in_package_section = false;
-                in_features_section = false;
-                continue;
-            } else if (trimmed_line == "[features]") {
-                in_features_section = true;
-                in_package_section = false;
-                in_dependencies_section = false;
-                continue;
-            } else if (trimmed_line[0] == '[') {
-                in_package_section = false;
-                in_dependencies_section = false;
-                in_features_section = false;
-                continue;
-            }
-
-            size_t eq_pos = line.find('=');
-            if (eq_pos == std::string::npos) continue;
-
-            std::string key = trim(line.substr(0, eq_pos));
-            std::string value = trim(line.substr(eq_pos + 1), " \t\r\n");
-
-            if (in_package_section) {
-                if (key == "name") meta.name = trim(value);
-                else if (key == "version") meta.version = trim(value);
-            } else if (in_dependencies_section) {
-                Dependency dep;
-                dep.name = key;
-
-                if (!value.empty() && value.front() == '{') {
-                    // Manual extraction for { key = value, ... }
-                    size_t path_pos = value.find("path");
-                    if (path_pos != std::string::npos) {
-                        size_t s1 = value.find('\"', path_pos);
-                        size_t s2 = value.find('\"', s1 + 1);
-                        if (s1 != std::string::npos && s2 != std::string::npos) {
-                            dep.path = value.substr(s1 + 1, s2 - s1 - 1);
-                        }
+            if (root.isObject()) {
+                const auto& root_obj = root.asObject();
+                if (root_obj.count("package")) {
+                    const auto& pkg = root_obj.at("package");
+                    if (pkg.isObject()) {
+                        const auto& pkg_obj = pkg.asObject();
+                        if (pkg_obj.count("name")) meta.name = pkg_obj.at("name").asString();
+                        if (pkg_obj.count("version")) meta.version = pkg_obj.at("version").asString();
                     }
-                    
-                    size_t feat_pos = value.find("features");
-                    if (feat_pos != std::string::npos) {
-                        size_t b1 = value.find('[', feat_pos);
-                        size_t b2 = value.find(']', b1 + 1);
-                        if (b1 != std::string::npos && b2 != std::string::npos) {
-                            std::string inner = value.substr(b1 + 1, b2 - b1 - 1);
-                            size_t start = 0;
-                            while (start < inner.size()) {
-                                size_t q1 = inner.find('\"', start);
-                                if (q1 == std::string::npos) break;
-                                size_t q2 = inner.find('\"', q1 + 1);
-                                if (q2 == std::string::npos) break;
-                                dep.features.push_back(inner.substr(q1 + 1, q2 - q1 - 1));
-                                start = q2 + 1;
+                }
+
+                if (root_obj.count("dependencies")) {
+                    const auto& deps = root_obj.at("dependencies");
+                    if (deps.isObject()) {
+                        for (auto const& [name, val] : deps.asObject()) {
+                            Dependency dep;
+                            dep.name = name;
+                            if (val.isString()) {
+                                dep.version = val.asString();
+                            } else if (val.isObject()) {
+                                const auto& dep_obj = val.asObject();
+                                if (dep_obj.count("version")) dep.version = dep_obj.at("version").asString();
+                                if (dep_obj.count("path")) dep.path = dep_obj.at("path").asString();
+                                if (dep_obj.count("git")) dep.git = dep_obj.at("git").asString();
+                                if (dep_obj.count("tag")) dep.tag = dep_obj.at("tag").asString();
+
+                                if (dep_obj.count("features")) {
+                                    const auto& feats = dep_obj.at("features");
+                                    if (feats.isArray()) {
+                                        for (const auto& f : feats.asArray()) {
+                                            if (f.isString()) dep.features.push_back(f.asString());
+                                        }
+                                    }
+                                }
                             }
+                            meta.dependencies[name] = dep;
                         }
                     }
+                }
 
-                    size_t ver_pos = value.find("version");
-                    if (ver_pos != std::string::npos) {
-                        size_t s1 = value.find('\"', ver_pos);
-                        size_t s2 = value.find('\"', s1 + 1);
-                        if (s1 != std::string::npos && s2 != std::string::npos) {
-                            dep.version = value.substr(s1 + 1, s2 - s1 - 1);
+                if (root_obj.count("features")) {
+                    const auto& features = root_obj.at("features");
+                    if (features.isObject()) {
+                        for (auto const& [name, val] : features.asObject()) {
+                            std::vector<std::string> feat_list;
+                            if (val.isArray()) {
+                                for (const auto& f : val.asArray()) {
+                                    if (f.isString()) feat_list.push_back(f.asString());
+                                }
+                            }
+                            meta.features[name] = feat_list;
                         }
                     }
-                } else {
-                    dep.version = trim(value);
                 }
-                meta.dependencies[key] = dep;
-            } else if (in_features_section) {
-                std::vector<std::string> feat_list;
-                size_t b1 = value.find('[');
-                size_t b2 = value.find(']');
-                if (b1 != std::string::npos && b2 != std::string::npos) {
-                    std::string inner = value.substr(b1 + 1, b2 - b1 - 1);
-                    size_t start = 0;
-                    while (start < inner.size()) {
-                        size_t q1 = inner.find('\"', start);
-                        if (q1 == std::string::npos) break;
-                        size_t q2 = inner.find('\"', q1 + 1);
-                        if (q2 == std::string::npos) break;
-                        feat_list.push_back(inner.substr(q1 + 1, q2 - q1 - 1));
-                        start = q2 + 1;
-                    }
-                }
-                meta.features[key] = feat_list;
             }
+        } catch (...) {
+            // Parse failed
         }
+
         return meta;
     }
 };
