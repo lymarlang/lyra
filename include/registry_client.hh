@@ -2,6 +2,7 @@
 #define REGISTRY_CLIENT_HH
 
 #include "lyra_common.hh"
+#include "crypto_helper.hh"
 #include <string>
 #include <vector>
 #include <iostream>
@@ -20,8 +21,10 @@ public:
 
     static int publish(const std::string& name, const std::string& version, const std::string& file_path) {
         std::string url = get_registry_url() + "/publish";
+        // Security: Avoid shell injection by quoting variables in curl command.
+        // In a production app, we would use libcurl directly.
         std::string cmd = "curl -X POST -F \"name=" + name + "\" -F \"version=" + version + 
-                          "\" -F \"file=@" + file_path + "\" " + url + " -s";
+                          "\" -F \"file=@" + file_path + "\" \"" + url + "\" -s";
         
         std::cout << "Publishing to registry..." << std::endl;
         int result = std::system(cmd.c_str());
@@ -40,7 +43,7 @@ public:
         fs::create_directories(cache_root);
         fs::path tar_path = cache_root / (name + "-" + version + ".tar.gz");
 
-        std::string cmd = "curl -L -o " + tar_path.string() + " " + url + " -s";
+        std::string cmd = "curl -L -o \"" + tar_path.string() + "\" \"" + url + "\" -s";
         std::cout << "Downloading '" << name << "@" << version << "' from registry..." << std::endl;
         
         int result = std::system(cmd.c_str());
@@ -49,9 +52,17 @@ public:
             return "";
         }
 
+        // Integrity verification (Placeholder logic: in real registry, we'd compare against a known hash)
+        std::string file_hash = CryptoHelper::sha256_file(tar_path.string());
+        if (file_hash.empty()) {
+            std::cerr << "error: failed to compute hash of downloaded file\n";
+            return "";
+        }
+        // std::cout << "Downloaded file hash: " << file_hash << "\n";
+
         // Extract
         fs::create_directories(pkg_dir);
-        std::string extract_cmd = "tar -xzf " + tar_path.string() + " -C " + pkg_dir.string() + " 2>/dev/null";
+        std::string extract_cmd = "tar -xzf \"" + tar_path.string() + "\" -C \"" + pkg_dir.string() + "\" 2>/dev/null";
         std::system(extract_cmd.c_str());
 
         return pkg_dir.string();

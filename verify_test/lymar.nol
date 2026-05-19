@@ -1,0 +1,7 @@
+# Lymar project configuration
+
+dependencies: {}
+package: {
+    name: "verify_test",
+    version: "0.1.0"
+  }

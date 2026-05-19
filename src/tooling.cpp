@@ -93,7 +93,7 @@ int handle_doctor() {
 }
 
 void print_tree_recursive(const std::string& current_path, int level, std::set<std::string>& visited) {
-    PackageMetadata meta = ConfigParser::parse(current_path + "/lymar.toml");
+    PackageMetadata meta = ConfigParser::parse(current_path + "/lymar.nol");
     if (meta.name.empty()) return;
 
     if (level > 0) {
@@ -117,7 +117,7 @@ void print_tree_recursive(const std::string& current_path, int level, std::set<s
              dep_path = (cache_dir / (name + "-" + dep.version)).string();
         }
 
-        if (!dep_path.empty() && fs::exists(dep_path + "/lymar.toml")) {
+        if (!dep_path.empty() && fs::exists(dep_path + "/lymar.nol")) {
             print_tree_recursive(dep_path, level + 1, visited);
         } else {
              for (int i = 0; i < level + 1; ++i) std::cout << "  ";
@@ -127,9 +127,9 @@ void print_tree_recursive(const std::string& current_path, int level, std::set<s
 }
 
 int handle_tree(int argc, char** argv) {
-    PackageMetadata root_meta = ConfigParser::parse("lymar.toml");
+    PackageMetadata root_meta = ConfigParser::parse("lymar.nol");
     if (root_meta.name.empty()) {
-        std::cerr << "error: could not find lymar.toml\n";
+        std::cerr << "error: could not find lymar.nol\n";
         return 1;
     }
 
@@ -152,7 +152,7 @@ int handle_tree(int argc, char** argv) {
 }
 
 bool find_path_why(const std::string& current_path, const std::string& target_name, std::vector<std::string>& path_acc) {
-    PackageMetadata meta = ConfigParser::parse(current_path + "/lymar.toml");
+    PackageMetadata meta = ConfigParser::parse(current_path + "/lymar.nol");
     if (meta.name.empty()) return false;
 
     path_acc.push_back(meta.name + " (" + meta.version + ")");
@@ -173,7 +173,7 @@ bool find_path_why(const std::string& current_path, const std::string& target_na
              }
         }
 
-        if (!dep_path.empty() && fs::exists(dep_path + "/lymar.toml")) {
+        if (!dep_path.empty() && fs::exists(dep_path + "/lymar.nol")) {
             if (find_path_why(dep_path, target_name, path_acc)) return true;
         }
     }
@@ -206,9 +206,9 @@ int handle_why(int argc, char** argv) {
 }
 
 int handle_clean() {
-    PackageMetadata meta = ConfigParser::parse("lymar.toml");
+    PackageMetadata meta = ConfigParser::parse("lymar.nol");
     if (meta.name.empty()) {
-        std::cerr << "error: could not find lymar.toml\n";
+        std::cerr << "error: could not find lymar.nol\n";
         return 1;
     }
 

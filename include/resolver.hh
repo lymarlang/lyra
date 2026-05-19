@@ -51,7 +51,7 @@ private:
         
         visiting.insert(abs_path);
         
-        PackageMetadata meta = ConfigParser::parse(current_path + "/lymar.toml");
+        PackageMetadata meta = ConfigParser::parse(current_path + "/lymar.nol");
         if (meta.name.empty()) {
             visiting.erase(abs_path);
             visited.insert(abs_path);
@@ -87,7 +87,7 @@ private:
             if (!dep_path.empty()) {
                 resolve_recursive(dep_path, resolved, visiting, visited, {});
                 
-                PackageMetadata dep_meta = ConfigParser::parse(dep_path + "/lymar.toml");
+                PackageMetadata dep_meta = ConfigParser::parse(dep_path + "/lymar.nol");
                 if (!dep_meta.version.empty() && !dep.version.empty() && dep.version != "*") {
                     if (!Semver::satisfies(dep_meta.version, dep.version)) {
                         std::cerr << "error: dependency version mismatch for '" << name << "'. "

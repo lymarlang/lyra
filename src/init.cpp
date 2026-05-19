@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include <filesystem>
+#include "nol.hpp"
 
 namespace fs = std::filesystem;
 
@@ -12,19 +13,27 @@ int handle_init() {
     
     std::cout << "Initializing project '" << project_name << "'...\n";
 
-    // Create lymar.toml
-    std::ofstream config_file("lymar.toml");
+    // Create lymar.nol
+    NOL::Builder builder;
+    NOL::Object pkg;
+    pkg["name"] = project_name;
+    pkg["version"] = "0.1.0";
+    builder.set("package", pkg);
+    builder.set("dependencies", NOL::Object{});
+
+    std::ofstream config_file("lymar.nol");
     if (!config_file.is_open()) {
-        std::cerr << "error: could not create lymar.toml\n";
+        std::cerr << "error: could not create lymar.nol\n";
         return 1;
     }
-    config_file << "[package]\n";
-    config_file << "name = \"" << project_name << "\"\n";
-    config_file << "version = \"0.1.0\"\n";
+    config_file << "# Lymar project configuration\n\n";
+    config_file << builder.build().dump();
     config_file.close();
 
     // Create src directory
-    fs::create_directory("src");
+    if (!fs::exists("src")) {
+        fs::create_directory("src");
+    }
 
     // Create src/main.lm
     std::ofstream main_file("src/main.lm");

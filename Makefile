@@ -1,7 +1,7 @@
 # Makefile for Lyra Package Manager
 
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -Iinclude
+CXXFLAGS = -std=c++17 -Wall -Wextra -Iinclude -lcrypto
 SRC_DIR = src
 OBJ_DIR = obj
 BIN_DIR = bin
@@ -15,7 +15,7 @@ OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJS) | $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $(OBJS) -o $@
+	$(CXX) $(OBJS) -o $@ -lcrypto
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@

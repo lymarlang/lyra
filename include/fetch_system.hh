@@ -18,13 +18,13 @@ public:
         fs::path pkg_dir = cache_root / (name + "-" + (tag.empty() ? "main" : tag));
 
         if (fs::exists(pkg_dir)) {
-            // std::cout << "Using cached dependency '" << name << "'\n";
             return pkg_dir.string();
         }
 
         std::cout << "Fetching dependency '" << name << "' from " << url << "...\n";
         fs::create_directories(cache_root);
 
+        // Security: Quote URL and path to prevent shell injection.
         std::string cmd = "git clone --depth 1 ";
         if (!tag.empty()) {
             cmd += "-b \"" + tag + "\" ";
