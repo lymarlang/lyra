@@ -22,6 +22,10 @@ struct Dependency {
 struct PackageMetadata {
     std::string name;
     std::string version;
+    std::string description;
+    std::string repository;
+    std::string license;
+    std::string author;
     std::map<std::string, Dependency> dependencies;
     std::map<std::string, std::vector<std::string>> features;
     std::vector<std::string> enabled_features;
@@ -53,6 +57,10 @@ public:
                     const auto& obj = pkg->asObject();
                     if (obj.count("name") && obj.at("name").isString()) meta.name = obj.at("name").asString();
                     if (obj.count("version") && obj.at("version").isString()) meta.version = obj.at("version").asString();
+                    if (obj.count("description") && obj.at("description").isString()) meta.description = obj.at("description").asString();
+                    if (obj.count("repository") && obj.at("repository").isString()) meta.repository = obj.at("repository").asString();
+                    if (obj.count("license") && obj.at("license").isString()) meta.license = obj.at("license").asString();
+                    if (obj.count("author") && obj.at("author").isString()) meta.author = obj.at("author").asString();
                 }
             }
 
@@ -69,7 +77,10 @@ public:
                             if (dep_obj.count("version") && dep_obj.at("version").isString()) dep.version = dep_obj.at("version").asString();
                             if (dep_obj.count("path") && dep_obj.at("path").isString()) dep.path = dep_obj.at("path").asString();
                             if (dep_obj.count("git") && dep_obj.at("git").isString()) dep.git = dep_obj.at("git").asString();
+                            if (dep_obj.count("github") && dep_obj.at("github").isString()) dep.git = "https://github.com/" + dep_obj.at("github").asString() + ".git";
                             if (dep_obj.count("tag") && dep_obj.at("tag").isString()) dep.tag = dep_obj.at("tag").asString();
+                            if (dep_obj.count("branch") && dep_obj.at("branch").isString()) dep.tag = dep_obj.at("branch").asString();
+                            if (dep_obj.count("rev") && dep_obj.at("rev").isString()) dep.tag = dep_obj.at("rev").asString();
                             if (dep_obj.count("features") && dep_obj.at("features").isArray()) {
                                 for (const auto& f : dep_obj.at("features").asArray()) {
                                     if (f.isString()) dep.features.push_back(f.asString());

@@ -25,13 +25,12 @@ int handle_test(int argc, char** argv) {
         return 0;
     }
 
-    char* root_dir = getenv("REPOROOT");
-    std::string compiler_path = root_dir ? std::string(root_dir) + "/bin/limitly" : "../bin/limitly";
+    std::string compiler_path = Lyra::find_compiler_path();
 
     int failed = 0;
     for (const auto& test : test_files) {
         std::cout << "Testing " << test << "... ";
-        std::vector<std::string> args = {test};
+        std::vector<std::string> args = {"run", test};
         int result = Lyra::run_command(compiler_path, args);
         if (result == 0) {
             std::cout << "PASSED\n";
@@ -51,6 +50,8 @@ int handle_test(int argc, char** argv) {
 }
 
 int handle_deps(int argc, char** argv) {
+    (void)argc;
+    (void)argv;
     std::vector<ResolvedDependency> deps = DependencyResolver::resolve(".");
     if (deps.empty()) {
         std::cout << "No dependencies found.\n";
@@ -68,26 +69,29 @@ int handle_deps(int argc, char** argv) {
 int handle_doctor() {
     std::cout << "Checking environment...\n";
     
-    char* root_dir = getenv("REPOROOT");
-    std::string compiler_path = root_dir ? std::string(root_dir) + "/bin/limitly" : "../bin/limitly";
-    
-    if (fs::exists(compiler_path)) {
+    std::string compiler_path = Lyra::find_compiler_path();
+    if (fs::exists(compiler_path) || compiler_path == "limitly" || compiler_path == "limitly.exe") {
         std::cout << "[OK] Lymar compiler found at " << compiler_path << "\n";
     } else {
         std::cout << "[ERROR] Lymar compiler not found. Please set REPOROOT or ensure bin/limitly exists.\n";
     }
 
-    if (std::system("git --version > /dev/null 2>&1") == 0) {
+    std::string git_check = "git --version" + std::string(LYRA_DEV_NULL);
+    if (std::system(git_check.c_str()) == 0) {
         std::cout << "[OK] git found\n";
     } else {
         std::cout << "[ERROR] git not found. Git dependencies will not work.\n";
     }
 
-    if (std::system("curl --version > /dev/null 2>&1") == 0) {
+    std::string curl_check = "curl --version" + std::string(LYRA_DEV_NULL);
+    if (std::system(curl_check.c_str()) == 0) {
         std::cout << "[OK] curl found\n";
     } else {
         std::cout << "[ERROR] curl not found. Registry features will not work.\n";
     }
+
+    std::cout << "[OK] Central package index: " << Lyra::get_default_index_url() << "\n";
+    std::cout << "[OK] Local index cache: " << Lyra::get_index_dir().string() << "\n";
 
     return 0;
 }
@@ -256,13 +260,18 @@ int handle_cache_clear() {
 
 int handle_env() {
     std::cout << "Lyra Environment:\n";
+    std::cout << "  Compiler Path:   " << Lyra::find_compiler_path() << "\n";
     std::cout << "  Cache Directory: " << Lyra::get_cache_dir().string() << "\n";
+    std::cout << "  Index Directory: " << Lyra::get_index_dir().string() << "\n";
+    std::cout << "  Index URL:       " << Lyra::get_default_index_url() << "\n";
 
     char* root = std::getenv("REPOROOT");
-    if (root) std::cout << "  REPOROOT: " << root << "\n";
+    if (root) std::cout << "  REPOROOT:        " << root << "\n";
 
     char* registry = std::getenv("LYRA_REGISTRY_URL");
-    std::cout << "  Registry URL: " << (registry ? registry : "http://localhost:8080/api") << "\n";
+    if (registry) {
+        std::cout << "  Registry URL:    " << registry << "\n";
+    }
 
     return 0;
 }

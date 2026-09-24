@@ -40,46 +40,51 @@ int handle_build(int argc, char** argv) {
         }
     }
 
+#ifdef _WIN32
+    if (output_file.find(".exe") == std::string::npos) {
+        output_file += ".exe";
+    }
+#endif
+
     if (!fs::exists(entry_point)) {
         std::cerr << "error: entry point '" << entry_point << "' not found\n";
         return 1;
     }
 
-    char* root_dir = getenv("REPOROOT");
-    std::string compiler_path = root_dir ? std::string(root_dir) + "/bin/limitly" : "../bin/limitly";
-    
-    if (!fs::exists(compiler_path)) {
-        compiler_path = "./bin/limitly";
-        if (!fs::exists(compiler_path)) {
-            compiler_path = "../bin/limitly";
-             if (!fs::exists(compiler_path)) {
-                compiler_path = "limitly";
-             }
-        }
-    }
+    std::string compiler_path = Lyra::find_compiler_path();
 
     // Always resolve and update lockfile to ensure it's in sync
     std::vector<ResolvedDependency> deps = DependencyResolver::resolve(".");
     LockSystem::generate_lockfile(".", deps);
 
     std::vector<std::string> args;
-    // Default build command uses -jit to create an executable
-    args.push_back("-jit");
-    for (const auto& arg : forwarded_args) {
-        args.push_back(arg);
+    args.push_back("build");
+    args.push_back("-o");
+    args.push_back(output_file);
+
+    args.push_back("-I");
+    args.push_back(".");
+
+    fs::path comp_root = fs::path(compiler_path).parent_path().parent_path();
+    if (fs::exists(comp_root / "std")) {
+        args.push_back("-I");
+        args.push_back(comp_root.string());
     }
 
-    // Add include paths for dependencies
     for (const auto& dep : deps) {
         args.push_back("-I");
+        args.push_back(dep.path);
+        args.push_back("-I");
         args.push_back(dep.path + "/src");
+    }
+
+    for (const auto& arg : forwarded_args) {
+        args.push_back(arg);
     }
 
     args.push_back(entry_point);
 
     std::cout << "Building project '" << meta.name << "'...\n";
-    std::cout << "(Note: Built-in JIT compilation might be unavailable in this environment)\n";
-    
     int result = Lyra::run_command(compiler_path, args);
     if (result == -1) {
         std::cerr << "error: failed to run " << compiler_path << "\n";

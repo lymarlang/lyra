@@ -5,6 +5,7 @@
 #include "semver.hh"
 #include "fetch_system.hh"
 #include "registry_client.hh"
+#include "index_client.hh"
 #include <string>
 #include <vector>
 #include <map>
@@ -81,7 +82,18 @@ private:
                     exit(1);
                 }
             } else if (!dep.version.empty()) {
-                dep_path = RegistryClient::download(name, dep.version);
+                dep_path = IndexClient::fetch(name, dep.version);
+                if (dep_path.empty()) {
+                    // Fallback to HTTP registry if configured
+                    char* reg_url = std::getenv("LYRA_REGISTRY_URL");
+                    if (reg_url && *reg_url) {
+                        dep_path = RegistryClient::download(name, dep.version);
+                    }
+                }
+                if (dep_path.empty()) {
+                    std::cerr << "error: failed to resolve and fetch dependency '" << name << "@" << dep.version << "'\n";
+                    exit(1);
+                }
             }
 
             if (!dep_path.empty()) {

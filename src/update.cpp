@@ -1,13 +1,15 @@
 #include "handlers.hh"
 #include "resolver.hh"
 #include "lock_system.hh"
+#include "index_client.hh"
 #include <iostream>
 #include <vector>
 #include <string>
 #include <sstream>
 
 int handle_update(int argc, char** argv) {
-    std::cout << "Updating dependencies...\n";
+    std::cout << "Updating dependencies and central index...\n";
+    IndexClient::sync_index(true);
 
     std::vector<std::string> enabled_features;
     for (int i = 2; i < argc; ++i) {

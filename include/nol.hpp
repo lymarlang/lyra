@@ -72,18 +72,32 @@ public:
             return s + "]";
         }
         if (isObject()) {
+            if (asObject().empty()) return root ? "" : "{}";
             std::string pad(level * indent, ' '), next_pad((level + 1) * indent, ' ');
-            std::string s = root ? "" : "{";
+            std::string s = root ? "" : "{\n";
             bool first = true;
             for (auto const& [k, v] : asObject()) {
                 if (k.empty() || (k[0] == '_' && !root)) continue;
-                if (!first && !root) s += ",";
-                if (!root) s += "\n" + next_pad;
-                s += k + ": " + v.dump(indent, level + 1);
+                std::string key_str = k;
+                bool needs_quotes = false;
+                if (key_str.empty() || (!isalpha((unsigned char)key_str[0]) && key_str[0] != '_')) {
+                    needs_quotes = true;
+                } else {
+                    for (char ch : key_str) {
+                        if (!isalnum((unsigned char)ch) && ch != '_' && ch != '-') {
+                            needs_quotes = true;
+                            break;
+                        }
+                    }
+                }
+                if (needs_quotes) key_str = "\"" + key_str + "\"";
+                if (!first && !root) s += ",\n";
+                if (!root) s += next_pad;
+                s += key_str + ": " + v.dump(indent, level + 1);
                 if (root) s += "\n";
                 first = false;
             }
-            return root ? s : (asObject().empty() ? "{}" : s + "\n" + pad + "}");
+            return root ? s : (s + "\n" + pad + "}");
         }
         return "";
     }
@@ -168,7 +182,7 @@ struct Parser {
         } else {
             while (true) {
                 char ch = peek();
-                if (ch && (isalnum((unsigned char)ch) || ch == '_' || ch == '-')) k += advance();
+                if (ch && (isalnum((unsigned char)ch) || ch == '_' || ch == '-' || ch == '.')) k += advance();
                 else break;
             }
         }

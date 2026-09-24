@@ -53,30 +53,32 @@ int handle_run(int argc, char** argv) {
         return 1;
     }
 
-    char* root_dir = getenv("REPOROOT");
-    std::string compiler_path = root_dir ? std::string(root_dir) + "/bin/limitly" : "../bin/limitly";
-    
-    if (!fs::exists(compiler_path)) {
-        compiler_path = "./bin/limitly";
-        if (!fs::exists(compiler_path)) {
-            compiler_path = "../bin/limitly";
-             if (!fs::exists(compiler_path)) {
-                compiler_path = "limitly";
-             }
-        }
-    }
+    std::string compiler_path = Lyra::find_compiler_path();
 
     std::vector<ResolvedDependency> deps = DependencyResolver::resolve(".", enabled_features);
     LockSystem::generate_lockfile(".", deps);
 
     std::vector<std::string> args;
-    for (const auto& arg : forwarded_args) {
-        args.push_back(arg);
+    args.push_back("run");
+
+    args.push_back("-I");
+    args.push_back(".");
+
+    fs::path comp_root = fs::path(compiler_path).parent_path().parent_path();
+    if (fs::exists(comp_root / "std")) {
+        args.push_back("-I");
+        args.push_back(comp_root.string());
     }
-    
+
     for (const auto& dep : deps) {
         args.push_back("-I");
+        args.push_back(dep.path);
+        args.push_back("-I");
         args.push_back(dep.path + "/src");
+    }
+
+    for (const auto& arg : forwarded_args) {
+        args.push_back(arg);
     }
 
     args.push_back(entry_point);
