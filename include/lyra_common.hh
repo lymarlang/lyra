@@ -63,13 +63,15 @@ inline std::string get_default_index_url() {
 }
 
 inline std::string find_compiler_path() {
+    if (const char* configured = std::getenv("LYMAR_EXECUTABLE"); configured && *configured)
+        return configured;
     // 1. Check directory where lyra binary itself is located
 #ifdef _WIN32
     char exe_buf[MAX_PATH];
     if (GetModuleFileNameA(NULL, exe_buf, MAX_PATH)) {
         fs::path self_dir = fs::path(exe_buf).parent_path();
-        if (fs::exists(self_dir / "limitly.exe")) {
-            return (self_dir / "limitly.exe").string();
+        if (fs::exists(self_dir / "lymar.exe")) {
+            return (self_dir / "lymar.exe").string();
         }
     }
 #endif
@@ -77,17 +79,17 @@ inline std::string find_compiler_path() {
     // 2. Check REPOROOT environment variable
     char* root_dir = getenv("REPOROOT");
     if (root_dir) {
-        fs::path p = fs::path(root_dir) / "bin" / ("limitly" LYRA_EXE_SUFFIX);
+        fs::path p = fs::path(root_dir) / "bin" / ("lymar" LYRA_EXE_SUFFIX);
         if (fs::exists(p)) {
             return p.string();
         }
     }
 
-    // 3. Search upwards from current directory for bin/limitly
+    // 3. Search upwards from current directory for bin/lymar
     try {
         fs::path cur = fs::current_path();
         while (true) {
-            fs::path candidate = cur / "bin" / ("limitly" LYRA_EXE_SUFFIX);
+            fs::path candidate = cur / "bin" / ("lymar" LYRA_EXE_SUFFIX);
             if (fs::exists(candidate)) {
                 return candidate.string();
             }
@@ -97,9 +99,9 @@ inline std::string find_compiler_path() {
     } catch (...) {}
 
 #ifdef _WIN32
-    return "limitly.exe";
+    return "lymar.exe";
 #else
-    return "limitly";
+    return "lymar";
 #endif
 }
 

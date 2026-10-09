@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <iostream>
 #include <algorithm>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -41,11 +42,13 @@ private:
                                 std::set<std::string>& visited,
                                 const std::vector<std::string>& enabled_features) {
         
-        std::string abs_path = fs::absolute(current_path).string();
+        std::string abs_path = fs::weakly_canonical(current_path).string();
+        if (!fs::is_regular_file(fs::path(abs_path) / "lymar.nol"))
+            throw std::runtime_error("Missing dependency manifest: " + abs_path);
         
         if (visiting.count(abs_path)) {
             std::cerr << "error: circular dependency detected involving '" << abs_path << "'\n";
-            exit(1);
+            throw std::runtime_error("Dependency resolution failed");
         }
         
         if (visited.count(abs_path)) return;
@@ -54,9 +57,7 @@ private:
         
         PackageMetadata meta = ConfigParser::parse(current_path + "/lymar.nol");
         if (meta.name.empty()) {
-            visiting.erase(abs_path);
-            visited.insert(abs_path);
-            return;
+            throw std::runtime_error("Invalid package manifest: " + abs_path);
         }
 
         for (auto const& [name, dep] : meta.dependencies) {
@@ -79,7 +80,7 @@ private:
                 dep_path = FetchSystem::fetch_git(name, dep.git, dep.tag);
                 if (dep_path.empty()) {
                     std::cerr << "error: failed to fetch git dependency '" << name << "'\n";
-                    exit(1);
+                    throw std::runtime_error("Dependency resolution failed");
                 }
             } else if (!dep.version.empty()) {
                 dep_path = IndexClient::fetch(name, dep.version);
@@ -92,7 +93,7 @@ private:
                 }
                 if (dep_path.empty()) {
                     std::cerr << "error: failed to resolve and fetch dependency '" << name << "@" << dep.version << "'\n";
-                    exit(1);
+                    throw std::runtime_error("Dependency resolution failed");
                 }
             }
 
@@ -104,7 +105,7 @@ private:
                     if (!Semver::satisfies(dep_meta.version, dep.version)) {
                         std::cerr << "error: dependency version mismatch for '" << name << "'. "
                                   << "Required " << dep.version << ", found " << dep_meta.version << "\n";
-                        exit(1);
+                        throw std::runtime_error("Dependency resolution failed");
                     }
                 }
 

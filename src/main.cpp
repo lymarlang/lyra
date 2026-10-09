@@ -30,7 +30,7 @@ void print_help() {
     std::cout << "  help    Show this help message\n";
 }
 
-int main(int argc, char** argv) {
+static int dispatch(int argc, char** argv) {
     if (argc < 2) {
         print_help();
         return 0;
@@ -86,4 +86,12 @@ int main(int argc, char** argv) {
     std::cerr << "error: unknown command '" << command << "'\n\n";
     print_help();
     return 1;
+}
+
+int main(int argc, char** argv) {
+    try { return dispatch(argc, argv); }
+    catch (const std::exception& error) {
+        std::cerr << "Package command failed: " << error.what() << "\n";
+        return 1;
+    }
 }
