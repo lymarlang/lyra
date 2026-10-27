@@ -33,6 +33,8 @@ inline int handle_doctor() { return ::handle_doctor(); }
 inline int handle_env() { return ::handle_env(); }
 inline int handle_audit(int argc, char** argv) { return ::handle_audit(argc, argv); }
 inline int handle_bench(int argc, char** argv) { return ::handle_bench(argc, argv); }
+inline int handle_lint(int argc, char** argv) { return ::handle_lint(argc, argv); }
+inline int handle_doc(int argc, char** argv) { return ::handle_doc(argc, argv); }
 
 } // namespace Lyra
 

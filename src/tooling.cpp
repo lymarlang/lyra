@@ -6,47 +6,218 @@
 #include <filesystem>
 #include <vector>
 
+#include <chrono>
+#include <iomanip>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <algorithm>
+#include <sstream>
+
 namespace fs = std::filesystem;
 
+struct TestResult {
+    std::string path;
+    bool passed = false;
+    double duration_sec = 0.0;
+    std::string output;
+};
+
 int handle_test(int argc, char** argv) {
-    std::cout << "Running tests...\n";
-    
+    std::string filter;
+    int parallel_jobs = 1;
+    bool verbose = false;
+    bool fail_fast = false;
+
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-v" || arg == "--verbose") {
+            verbose = true;
+        } else if (arg == "--fail-fast") {
+            fail_fast = true;
+        } else if (arg == "-j" || arg == "--parallel") {
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                parallel_jobs = std::max(1, std::atoi(argv[++i]));
+            } else {
+                parallel_jobs = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+            }
+        } else if (arg.rfind("--filter=", 0) == 0) {
+            filter = arg.substr(9);
+        } else if (arg[0] != '-') {
+            if (filter.empty()) filter = arg;
+        }
+    }
+
     std::vector<std::string> test_files;
-    if (fs::exists("tests")) {
-        for (const auto& entry : fs::directory_iterator("tests")) {
-            if (entry.path().extension() == ".lm") {
-                test_files.push_back(entry.path().string());
+    auto add_file_if_matches = [&](const fs::path& p) {
+        if (p.extension() != ".lm") return;
+        std::string s = p.generic_string();
+        if (filter.empty() || s.find(filter) != std::string::npos) {
+            test_files.push_back(s);
+        }
+    };
+
+    if (!filter.empty() && fs::is_regular_file(filter)) {
+        test_files.push_back(fs::path(filter).generic_string());
+    } else if (fs::exists("tests/test.txt")) {
+        std::ifstream mf("tests/test.txt");
+        std::string line;
+        while (std::getline(mf, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) line.pop_back();
+            if (line.empty() || line[0] == '#') continue;
+            std::string s = fs::path(line).generic_string();
+            if (filter.empty() || s.find(filter) != std::string::npos) {
+                test_files.push_back(s);
+            }
+        }
+    } else {
+        if (fs::exists("tests")) {
+            for (const auto& entry : fs::recursive_directory_iterator("tests")) {
+                if (entry.is_regular_file()) {
+                    add_file_if_matches(entry.path());
+                }
+            }
+        }
+        if (fs::exists("src")) {
+            for (const auto& entry : fs::recursive_directory_iterator("src")) {
+                if (entry.is_regular_file()) {
+                    std::string fname = entry.path().filename().string();
+                    if (fname.find("_test.lm") != std::string::npos || fname.rfind("test_", 0) == 0) {
+                        add_file_if_matches(entry.path());
+                    }
+                }
             }
         }
     }
 
+    std::sort(test_files.begin(), test_files.end());
+
     if (test_files.empty()) {
-        std::cout << "No tests found in tests/ directory.\n";
+        if (filter.empty()) {
+            std::cout << "No tests found in tests/ or src/\n";
+        } else {
+            std::cout << "No tests matched filter: '" << filter << "'\n";
+        }
         return 0;
     }
 
     std::string compiler_path = Lyra::find_compiler_path();
+    std::cout << "====================================================\n";
+    std::cout << "Running " << test_files.size() << " test" << (test_files.size() == 1 ? "" : "s")
+              << " (" << (parallel_jobs > 1 ? ("parallel, " + std::to_string(parallel_jobs) + " threads") : "sequential") << ")\n";
+    std::cout << "====================================================\n";
 
-    int failed = 0;
-    for (const auto& test : test_files) {
-        std::cout << "Testing " << test << "... ";
-        std::vector<std::string> args = {"run", test};
-        int result = Lyra::run_command(compiler_path, args);
-        if (result == 0) {
-            std::cout << "PASSED\n";
-        } else {
-            std::cout << "FAILED\n";
-            failed++;
+    auto run_single_test = [&](const std::string& test_path) -> TestResult {
+        TestResult res;
+        res.path = test_path;
+        auto t0 = std::chrono::high_resolution_clock::now();
+        std::vector<std::string> args = {"run", test_path};
+        int code = Lyra::run_command_capture(compiler_path, args, res.output);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        res.duration_sec = std::chrono::duration<double>(t1 - t0).count();
+        res.passed = (code == 0);
+        return res;
+    };
+
+    int passed_count = 0;
+    int failed_count = 0;
+    auto suite_start = std::chrono::high_resolution_clock::now();
+
+    if (parallel_jobs <= 1) {
+        for (const auto& test_path : test_files) {
+            TestResult res = run_single_test(test_path);
+            if (res.passed) {
+                passed_count++;
+                std::cout << "PASS (" << std::fixed << std::setprecision(2) << res.duration_sec << "s): " << res.path << "\n";
+                if (verbose && !res.output.empty()) {
+                    std::cout << res.output << "\n";
+                }
+            } else {
+                failed_count++;
+                std::cout << "FAIL (" << std::fixed << std::setprecision(2) << res.duration_sec << "s): " << res.path << "\n";
+                if (!res.output.empty()) {
+                    std::cout << "  Captured Output:\n";
+                    std::istringstream stream(res.output);
+                    std::string line;
+                    while (std::getline(stream, line)) {
+                        std::cout << "    " << line << "\n";
+                    }
+                }
+                if (fail_fast) break;
+            }
+        }
+    } else {
+        std::mutex mtx;
+        std::atomic<size_t> next_idx{0};
+        std::atomic<bool> should_abort{false};
+
+        auto worker = [&]() {
+            while (true) {
+                if (fail_fast && should_abort.load()) break;
+                size_t idx = next_idx.fetch_add(1);
+                if (idx >= test_files.size()) break;
+
+                TestResult res = run_single_test(test_files[idx]);
+
+                std::lock_guard<std::mutex> lock(mtx);
+                if (res.passed) {
+                    passed_count++;
+                    std::cout << "PASS (" << std::fixed << std::setprecision(2) << res.duration_sec << "s): " << res.path << "\n";
+                    if (verbose && !res.output.empty()) {
+                        std::cout << res.output << "\n";
+                    }
+                } else {
+                    failed_count++;
+                    std::cout << "FAIL (" << std::fixed << std::setprecision(2) << res.duration_sec << "s): " << res.path << "\n";
+                    if (!res.output.empty()) {
+                        std::cout << "  Captured Output:\n";
+                        std::istringstream stream(res.output);
+                        std::string line;
+                        while (std::getline(stream, line)) {
+                            std::cout << "    " << line << "\n";
+                        }
+                    }
+                    if (fail_fast) should_abort.store(true);
+                }
+            }
+        };
+
+        std::vector<std::thread> threads;
+        for (int i = 0; i < parallel_jobs; ++i) {
+            threads.emplace_back(worker);
+        }
+        for (auto& th : threads) {
+            if (th.joinable()) th.join();
         }
     }
 
-    if (failed > 0) {
-        std::cout << "\nTest session failed: " << failed << " tests failed.\n";
-        return 1;
-    }
+    auto suite_end = std::chrono::high_resolution_clock::now();
+    double total_time = std::chrono::duration<double>(suite_end - suite_start).count();
 
-    std::cout << "\nTest session passed.\n";
-    return 0;
+    std::cout << "====================================================\n";
+    std::cout << "Summary: PASSED=" << passed_count << ", FAILED=" << failed_count
+              << " in " << std::fixed << std::setprecision(2) << total_time << "s\n";
+    std::cout << "====================================================\n";
+
+    return (failed_count > 0) ? 1 : 0;
+}
+
+int handle_lint(int argc, char** argv) {
+    std::string compiler = Lyra::find_compiler_path();
+    std::vector<std::string> args = {"lint"};
+    for (int i = 2; i < argc; ++i) {
+        args.push_back(argv[i]);
+    }
+    return Lyra::run_command(compiler, args);
+}
+
+int handle_doc(int argc, char** argv) {
+    std::string compiler = Lyra::find_compiler_path();
+    std::vector<std::string> args = {"doc"};
+    for (int i = 2; i < argc; ++i) {
+        args.push_back(argv[i]);
+    }
+    return Lyra::run_command(compiler, args);
 }
 
 int handle_deps(int argc, char** argv) {
@@ -292,18 +463,10 @@ int handle_audit(int argc, char** argv) {
 }
 
 int handle_bench(int argc, char** argv) {
-    std::cout << "Running benchmarks...\n";
-    if (!fs::exists("benches")) {
-        std::cout << "No 'benches' directory found.\n";
-        return 0;
+    std::string compiler = Lyra::find_compiler_path();
+    std::vector<std::string> args = {"bench"};
+    for (int i = 2; i < argc; ++i) {
+        args.push_back(argv[i]);
     }
-
-    for (const auto& entry : fs::directory_iterator("benches")) {
-        if (entry.path().extension() == ".lm") {
-            std::cout << "Benchmarking " << entry.path().filename() << "...\n";
-            // In a real implementation, we would build and run this with timing
-        }
-    }
-
-    return 0;
+    return Lyra::run_command(compiler, args);
 }

@@ -20,6 +20,9 @@ void print_help() {
     std::cout << "  search  Search for packages in the registry\n";
     std::cout << "  info    Show information about a package\n";
     std::cout << "  test    Run project tests\n";
+    std::cout << "  bench   Run project benchmarks\n";
+    std::cout << "  lint    Lint source files for code smells & errors\n";
+    std::cout << "  doc     Generate documentation from source docstrings\n";
     std::cout << "  deps    List project dependencies\n";
     std::cout << "  tree    Display dependency tree\n";
     std::cout << "  why     Show why a package is included\n";
@@ -67,6 +70,12 @@ static int dispatch(int argc, char** argv) {
         return handle_info(argc, argv);
     } else if (command == "test") {
         return handle_test(argc, argv);
+    } else if (command == "bench") {
+        return handle_bench(argc, argv);
+    } else if (command == "lint") {
+        return handle_lint(argc, argv);
+    } else if (command == "doc") {
+        return handle_doc(argc, argv);
     } else if (command == "deps") {
         return handle_deps(argc, argv);
     } else if (command == "tree") {
