@@ -27,5 +27,6 @@ int handle_audit(int argc, char** argv);
 int handle_bench(int argc, char** argv);
 int handle_lint(int argc, char** argv);
 int handle_doc(int argc, char** argv);
+int handle_profile(int argc, char** argv);
 
 #endif

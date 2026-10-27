@@ -470,3 +470,13 @@ int handle_bench(int argc, char** argv) {
     }
     return Lyra::run_command(compiler, args);
 }
+
+int handle_profile(int argc, char** argv) {
+    std::string compiler = Lyra::find_compiler_path();
+    std::vector<std::string> args = {"profile"};
+    for (int i = 2; i < argc; ++i) {
+        args.push_back(argv[i]);
+    }
+    return Lyra::run_command(compiler, args);
+}
+

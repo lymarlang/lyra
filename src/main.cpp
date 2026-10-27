@@ -72,6 +72,8 @@ static int dispatch(int argc, char** argv) {
         return handle_test(argc, argv);
     } else if (command == "bench") {
         return handle_bench(argc, argv);
+    } else if (command == "profile") {
+        return handle_profile(argc, argv);
     } else if (command == "lint") {
         return handle_lint(argc, argv);
     } else if (command == "doc") {
