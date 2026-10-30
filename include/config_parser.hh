@@ -29,6 +29,16 @@ struct PackageMetadata {
     std::map<std::string, Dependency> dependencies;
     std::map<std::string, std::vector<std::string>> features;
     std::vector<std::string> enabled_features;
+    // [native] - foreign .c/.cpp sources and link options compiled by the
+    // native toolchain and linked into built artifacts (roadmap item 2a).
+    // Values accept either arrays or single-line strings.
+    std::vector<std::string> native_sources;
+    std::vector<std::string> native_include_dirs;
+    std::vector<std::string> native_cflags;
+    std::vector<std::string> native_link_libs;
+    // [native] header binding generation (roadmap item 2b).
+    std::vector<std::string> bind_headers;
+    std::vector<std::string> bind_lib_paths;
 };
 
 class ConfigParser {
@@ -38,6 +48,22 @@ public:
         if (first == std::string::npos) return "";
         size_t last = str.find_last_not_of(chars);
         return str.substr(first, (last - first + 1));
+    }
+
+    // Accept either an array of strings or a whitespace-separated string for
+    // list-valued manifest keys.
+    static std::vector<std::string> string_list(const NOL::Value& val) {
+        std::vector<std::string> out;
+        if (val.isArray()) {
+            for (const auto& item : val.asArray()) {
+                if (item.isString() && !item.asString().empty()) out.push_back(item.asString());
+            }
+        } else if (val.isString()) {
+            std::stringstream stream(val.asString());
+            std::string token;
+            while (stream >> token) out.push_back(token);
+        }
+        return out;
     }
 
     static PackageMetadata parse(const std::string& filename) {
@@ -104,6 +130,19 @@ public:
                             meta.features[name] = feature_deps;
                         }
                     }
+                }
+            }
+
+            // Parse [native]
+            if (const auto* native = doc.get("native")) {
+                if (native->isObject()) {
+                    const auto& obj = native->asObject();
+                    if (obj.count("sources")) meta.native_sources = string_list(obj.at("sources"));
+                    if (obj.count("include_dirs")) meta.native_include_dirs = string_list(obj.at("include_dirs"));
+                    if (obj.count("cflags")) meta.native_cflags = string_list(obj.at("cflags"));
+                    if (obj.count("link_libs")) meta.native_link_libs = string_list(obj.at("link_libs"));
+                    if (obj.count("headers")) meta.bind_headers = string_list(obj.at("headers"));
+                    if (obj.count("bind_libs")) meta.bind_lib_paths = string_list(obj.at("bind_libs"));
                 }
             }
 
