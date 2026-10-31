@@ -30,6 +30,8 @@ void print_help() {
     std::cout << "  doctor  Check environment for issues\n";
     std::cout << "  env     Show environment info\n";
     std::cout << "  audit   Audit dependencies for security\n";
+    std::cout << "  deb     Create a .deb installer package\n";
+    std::cout << "  msi     Create a .msi installer package\n";
     std::cout << "  help    Show this help message\n";
 }
 
@@ -92,6 +94,10 @@ static int dispatch(int argc, char** argv) {
         return handle_env();
     } else if (command == "audit") {
         return handle_audit(argc, argv);
+    } else if (command == "deb") {
+        return handle_deb(argc, argv);
+    } else if (command == "msi") {
+        return handle_msi(argc, argv);
     }
 
     std::cerr << "error: unknown command '" << command << "'\n\n";

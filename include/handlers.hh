@@ -28,5 +28,7 @@ int handle_bench(int argc, char** argv);
 int handle_lint(int argc, char** argv);
 int handle_doc(int argc, char** argv);
 int handle_profile(int argc, char** argv);
+int handle_deb(int argc, char** argv);
+int handle_msi(int argc, char** argv);
 
 #endif
