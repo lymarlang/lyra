@@ -79,11 +79,107 @@ public:
         return true;
     }
 
+    // Sparse index HTTP protocol: fetches individual .nol files over HTTP/CDN
+    // with ETag / If-Modified-Since caching.
+    static fs::path fetch_sparse_index(const std::string& name) {
+        char* sparse_url_env = std::getenv("LYRA_SPARSE_INDEX_URL");
+        if (!sparse_url_env || !*sparse_url_env) return {};
+
+        std::string base_url = sparse_url_env;
+        while (!base_url.empty() && base_url.back() == '/') base_url.pop_back();
+
+        fs::path sparse_cache = Lyra::get_cache_dir().parent_path() / "sparse_index";
+        fs::create_directories(sparse_cache);
+
+        // Normalize scoped name: @scope/pkg -> @scope_pkg or subdirs
+        std::string safe_name = name;
+        for (char& c : safe_name) {
+            if (c == '/') c = '_';
+        }
+
+        fs::path local_nol = sparse_cache / (safe_name + ".nol");
+        fs::path etag_file = sparse_cache / (safe_name + ".etag");
+
+        std::string pkg_rel_path;
+        if (name.rfind("@", 0) == 0 && name.find('/') != std::string::npos) {
+            pkg_rel_path = name + ".nol";
+        } else if (name.size() == 1) {
+            pkg_rel_path = "1/" + name + ".nol";
+        } else if (name.size() == 2) {
+            pkg_rel_path = "2/" + name + ".nol";
+        } else if (name.size() == 3) {
+            pkg_rel_path = "3/" + name.substr(0, 1) + "/" + name + ".nol";
+        } else {
+            pkg_rel_path = name.substr(0, 2) + "/" + name.substr(2, 2) + "/" + name + ".nol";
+        }
+
+        std::string url = base_url + "/" + pkg_rel_path;
+        std::string etag_header = "";
+        if (fs::exists(etag_file) && fs::exists(local_nol)) {
+            std::ifstream ef(etag_file);
+            std::string etag;
+            if (std::getline(ef, etag) && !etag.empty()) {
+                etag_header = " -H \"If-None-Match: " + etag + "\" ";
+            }
+        }
+
+        std::string tmp_headers = ".sparse_hdr_" + std::to_string(Lyra::get_process_id()) + ".tmp";
+        std::string tmp_body = ".sparse_body_" + std::to_string(Lyra::get_process_id()) + ".tmp";
+        std::string curl_cmd = "curl -s -L -D \"" + tmp_headers + "\" " + etag_header + " -o \"" + tmp_body + "\" \"" + url + "\"";
+        int res = std::system(curl_cmd.c_str());
+
+        if (res == 0 && fs::exists(tmp_headers)) {
+            std::ifstream hf(tmp_headers);
+            std::string line;
+            bool not_modified = false;
+            std::string new_etag;
+            while (std::getline(hf, line)) {
+                if (line.find("304 Not Modified") != std::string::npos) {
+                    not_modified = true;
+                }
+                if (line.rfind("ETag:", 0) == 0 || line.rfind("etag:", 0) == 0) {
+                    new_etag = line.substr(5);
+                    while (!new_etag.empty() && (new_etag.front() == ' ' || new_etag.front() == '\t')) new_etag.erase(0, 1);
+                    while (!new_etag.empty() && (new_etag.back() == '\r' || new_etag.back() == '\n' || new_etag.back() == ' ')) new_etag.pop_back();
+                }
+            }
+            hf.close();
+            fs::remove(tmp_headers);
+
+            if (not_modified && fs::exists(local_nol)) {
+                fs::remove(tmp_body);
+                return local_nol;
+            }
+
+            if (fs::exists(tmp_body) && fs::file_size(tmp_body) > 0) {
+                fs::rename(tmp_body, local_nol);
+                if (!new_etag.empty()) {
+                    std::ofstream ef(etag_file);
+                    ef << new_etag << "\n";
+                    ef.close();
+                }
+                return local_nol;
+            }
+            fs::remove(tmp_body);
+        }
+        return {};
+    }
+
     static fs::path get_package_file_path(const std::string& name) {
+        // Try sparse index protocol first if enabled
+        fs::path sparse = fetch_sparse_index(name);
+        if (!sparse.empty() && fs::exists(sparse)) return sparse;
+
         fs::path index_dir = Lyra::get_index_dir();
-        // 1. Direct path: packages/<name>.nol
+        // 1. Direct path: packages/<name>.nol (or subdirs for scoped names @scope/name)
         fs::path p1 = index_dir / "packages" / (name + ".nol");
         if (fs::exists(p1)) return p1;
+
+        // Scoped packages @scope/pkg -> packages/@scope/pkg.nol
+        if (name.find('/') != std::string::npos) {
+            fs::path p_scoped = index_dir / "packages" / (name + ".nol");
+            if (fs::exists(p_scoped)) return p_scoped;
+        }
 
         // 2. Sharded path (for large registries): packages/<first_char>/<name>.nol
         if (!name.empty()) {
@@ -98,8 +194,10 @@ public:
     static bool get_package(const std::string& name, IndexPackage& out_pkg) {
         fs::path pkg_file = get_package_file_path(name);
         if (!fs::exists(pkg_file)) {
-            // Try updating index once
-            sync_index(true);
+            // Try updating index once if not using sparse index
+            if (!std::getenv("LYRA_SPARSE_INDEX_URL")) {
+                sync_index(true);
+            }
             pkg_file = get_package_file_path(name);
             if (!fs::exists(pkg_file)) return false;
         }

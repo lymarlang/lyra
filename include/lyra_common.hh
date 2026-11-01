@@ -30,7 +30,7 @@ namespace Lyra {
 inline bool is_safe_string(const std::string& s) {
     if (s.empty()) return false;
     for (char c : s) {
-        if (!std::isalnum(c) && c != '.' && c != '-' && c != '_') return false;
+        if (!std::isalnum(c) && c != '.' && c != '-' && c != '_' && c != '@' && c != '/') return false;
     }
     return true;
 }

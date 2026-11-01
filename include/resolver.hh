@@ -39,7 +39,8 @@ class DependencyResolver {
 public:
     static std::vector<ResolvedDependency> resolve(const std::string& project_root,
                                                    const std::vector<std::string>& enabled_features = {},
-                                                   bool offline = false) {
+                                                  bool offline = false,
+                                                  bool mvs = false) {
         std::string abs_root = fs::weakly_canonical(project_root).string();
         if (!fs::is_regular_file(fs::path(abs_root) / "lymar.nol")) {
             throw std::runtime_error("Missing dependency manifest: " + abs_root);
@@ -53,7 +54,13 @@ public:
         std::map<std::string, std::string> root_constraints;
         std::map<std::string, Dependency> root_dep_specs;
 
-        for (const auto& [name, dep] : root_meta.dependencies) {
+        // Apply patches/overrides to root dependencies
+        auto effective_deps = root_meta.dependencies;
+        for (const auto& [name, patch_dep] : root_meta.patches) {
+            effective_deps[name] = patch_dep;
+        }
+
+        for (const auto& [name, dep] : effective_deps) {
             if (!dep.features.empty()) {
                 bool feature_satisfied = false;
                 for (const auto& f : dep.features) {
@@ -76,7 +83,7 @@ public:
             constraints[name].push_back({root_meta.name, req});
         }
 
-        if (!backtrack_solve(selected, constraints, root_dep_specs, abs_root, offline)) {
+        if (!backtrack_solve(selected, constraints, root_dep_specs, root_meta.patches, abs_root, offline, mvs)) {
             std::cerr << "error: unable to find a compatible dependency version resolution (PubGrub conflict detected)\n";
             for (const auto& [pkg, req_list] : constraints) {
                 std::cerr << "  Package '" << pkg << "' required with constraints:\n";
@@ -111,8 +118,10 @@ private:
     static bool backtrack_solve(std::map<std::string, PackageCandidate>& selected,
                                 std::map<std::string, std::vector<std::pair<std::string, std::string>>>& constraints,
                                 const std::map<std::string, Dependency>& root_dep_specs,
+                                const std::map<std::string, Dependency>& patches,
                                 const std::string& project_root,
-                                bool offline) {
+                                bool offline,
+                                bool mvs) {
         std::string next_pkg;
         for (const auto& [pkg, reqs] : constraints) {
             if (selected.find(pkg) == selected.end() && !reqs.empty()) {
@@ -125,11 +134,21 @@ private:
             return true;
         }
 
-        std::vector<PackageCandidate> candidates = get_candidates(next_pkg, root_dep_specs, project_root, offline);
+        // Check if package is overridden by [patch] / [replace]
+        std::map<std::string, Dependency> effective_specs = root_dep_specs;
+        if (patches.find(next_pkg) != patches.end()) {
+            effective_specs[next_pkg] = patches.at(next_pkg);
+        }
 
-        std::sort(candidates.begin(), candidates.end(), [](const PackageCandidate& a, const PackageCandidate& b) {
+        std::vector<PackageCandidate> candidates = get_candidates(next_pkg, effective_specs, project_root, offline);
+
+        std::sort(candidates.begin(), candidates.end(), [mvs](const PackageCandidate& a, const PackageCandidate& b) {
             Version va = Version::parse(a.version);
             Version vb = Version::parse(b.version);
+            if (mvs) {
+                // Minimal Version Selection: resolve oldest compatible version
+                return va < vb;
+            }
             return vb < va;
         });
 
@@ -160,7 +179,7 @@ private:
             }
 
             if (!conflict) {
-                if (backtrack_solve(selected, new_constraints, root_dep_specs, project_root, offline)) {
+                if (backtrack_solve(selected, new_constraints, root_dep_specs, patches, project_root, offline, mvs)) {
                     return true;
                 }
             }

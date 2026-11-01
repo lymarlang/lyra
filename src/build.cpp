@@ -4,6 +4,8 @@
 #include "resolver.hh"
 #include "lock_system.hh"
 #include "workspace.hh"
+#include "build_cache.hh"
+#include "native_toolchain.hh"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -59,6 +61,7 @@ int handle_build(int argc, char** argv) {
     bool locked = false;
     bool frozen = false;
     bool offline = false;
+    bool mvs = false;
     std::vector<std::string> forwarded_args;
     bool forwarding = false;
 
@@ -85,6 +88,8 @@ int handle_build(int argc, char** argv) {
                 offline = true;
             } else if (arg == "--offline") {
                 offline = true;
+            } else if (arg == "--mvs") {
+                mvs = true;
             } else if (arg[0] != '-') {
                 entry_point = arg;
             }
@@ -102,6 +107,14 @@ int handle_build(int argc, char** argv) {
         return 1;
     }
 
+    // Build native C/C++ dependencies / bindings if configured in [native]
+    if (!meta.native_sources.empty()) {
+        if (!NativeToolchain::build_native(meta)) {
+            std::cerr << "error: native toolchain build failed\n";
+            return 1;
+        }
+    }
+
     std::string compiler_path = Lyra::find_compiler_path();
 
     std::vector<ResolvedDependency> deps;
@@ -116,7 +129,7 @@ int handle_build(int argc, char** argv) {
             return 1;
         }
     } else {
-        deps = DependencyResolver::resolve(".", {}, offline);
+        deps = DependencyResolver::resolve(".", {}, offline, mvs);
         LockSystem::generate_lockfile(".", deps);
     }
 
@@ -152,12 +165,26 @@ int handle_build(int argc, char** argv) {
 
     args.push_back(entry_point);
 
+    // Compute build cache key: hash(source_code + compiler_version + flags + dependencies)
+    std::vector<std::string> dep_hashes;
+    for (const auto& dep : deps) {
+        dep_hashes.push_back(dep.name + "@" + dep.version + ":" + dep.hash);
+    }
+    std::string cache_key = BuildCache::compute_cache_key(".", entry_point, compiler_path, args, dep_hashes);
+
+    if (BuildCache::query(cache_key, output_file)) {
+        std::cout << "[Lyra Cache] Using cached build artifact for '" << meta.name << "' (" << cache_key.substr(0, 12) << ")\n";
+        std::cout << "Build successful.\n";
+        return 0;
+    }
+
     std::cout << "Building project '" << meta.name << "'...\n";
     int result = Lyra::run_command(compiler_path, args);
     if (result == -1) {
         std::cerr << "error: failed to run " << compiler_path << "\n";
     }
     if (result == 0) {
+        BuildCache::store(cache_key, output_file);
         std::cout << "Build successful.\n";
     }
     
