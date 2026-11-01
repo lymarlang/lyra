@@ -3,6 +3,7 @@
 
 #include "lyra_common.hh"
 #include "crypto_helper.hh"
+#include "tar_helper.hh"
 #include <string>
 #include <vector>
 #include <iostream>
@@ -62,8 +63,7 @@ public:
 
         // Extract
         fs::create_directories(pkg_dir);
-        std::string extract_cmd = "tar -xzf \"" + tar_path.string() + "\" -C \"" + pkg_dir.string() + "\" 2>/dev/null";
-        std::system(extract_cmd.c_str());
+        TarHelper::extract_tar_gz(tar_path.string(), pkg_dir.string());
 
         return pkg_dir.string();
     }

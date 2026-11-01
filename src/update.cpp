@@ -2,6 +2,7 @@
 #include "resolver.hh"
 #include "lock_system.hh"
 #include "index_client.hh"
+#include "fetch_system.hh"
 #include <iostream>
 #include <vector>
 #include <string>
@@ -21,6 +22,18 @@ int handle_update(int argc, char** argv) {
                 enabled_features.push_back(feat);
             }
         }
+    }
+
+    PackageMetadata meta = ConfigParser::parse("lymar.nol");
+    std::vector<FetchJob> jobs;
+    for (const auto& [name, dep] : meta.dependencies) {
+        if (!dep.git.empty()) {
+            jobs.push_back({name, dep.git, dep.tag});
+        }
+    }
+    if (!jobs.empty()) {
+        std::cout << "Fetching " << jobs.size() << " remote dependencies in parallel...\n";
+        FetchSystem::fetch_parallel(jobs);
     }
 
     std::vector<ResolvedDependency> deps = DependencyResolver::resolve(".", enabled_features);

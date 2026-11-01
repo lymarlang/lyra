@@ -23,6 +23,9 @@ int handle_run(int argc, char** argv) {
     std::vector<std::string> forwarded_args;
     bool forwarding = false;
     std::vector<std::string> enabled_features;
+    bool locked = false;
+    bool frozen = false;
+    bool offline = false;
 
     for (int i = 2; i < argc; ++i) {
         std::string arg = argv[i];
@@ -36,6 +39,20 @@ int handle_run(int argc, char** argv) {
             while (std::getline(ss, feat, ',')) {
                 enabled_features.push_back(feat);
             }
+            continue;
+        }
+        if (arg == "--locked") {
+            locked = true;
+            continue;
+        }
+        if (arg == "--frozen") {
+            frozen = true;
+            locked = true;
+            offline = true;
+            continue;
+        }
+        if (arg == "--offline") {
+            offline = true;
             continue;
         }
 
@@ -55,8 +72,21 @@ int handle_run(int argc, char** argv) {
 
     std::string compiler_path = Lyra::find_compiler_path();
 
-    std::vector<ResolvedDependency> deps = DependencyResolver::resolve(".", enabled_features);
-    LockSystem::generate_lockfile(".", deps);
+    std::vector<ResolvedDependency> deps;
+    if (locked || frozen) {
+        if (!LockSystem::lockfile_exists(".")) {
+            std::cerr << "error: --locked / --frozen specified but lymar.lock does not exist\n";
+            return 1;
+        }
+        deps = LockSystem::read_lockfile(".");
+        if (!LockSystem::verify_lockfile_integrity(".")) {
+            std::cerr << "error: lockfile integrity verification failed\n";
+            return 1;
+        }
+    } else {
+        deps = DependencyResolver::resolve(".", enabled_features, offline);
+        LockSystem::generate_lockfile(".", deps);
+    }
 
     std::vector<std::string> args;
     args.push_back("run");

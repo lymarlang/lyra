@@ -1,14 +1,16 @@
 #ifndef LOCK_SYSTEM_HH
 #define LOCK_SYSTEM_HH
 
-#include "resolver.hh"
 #include "nol.hpp"
 #include "crypto_helper.hh"
+#include "resolver.hh"
 #include <string>
 #include <vector>
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <algorithm>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -26,10 +28,12 @@ public:
                 pkg["path"] = dep.path;
             }
 
-            // In a real scenario, we'd hash the actual package content
-            // For now, let's hash the version and name as a placeholder if path is empty (registry package)
-            if (dep.path.empty()) {
-                pkg["hash"] = CryptoHelper::sha256(dep.name + "@" + dep.version);
+            std::string content_hash = dep.hash;
+            if (content_hash.empty() && !dep.path.empty() && fs::exists(dep.path)) {
+                content_hash = "sha256:" + CryptoHelper::calculate_package_hash(dep.path);
+            }
+            if (!content_hash.empty()) {
+                pkg["hash"] = content_hash;
             }
 
             packages.push_back(pkg);
@@ -72,6 +76,7 @@ public:
                             if (obj.count("name") && obj.at("name").isString()) dep.name = obj.at("name").asString();
                             if (obj.count("version") && obj.at("version").isString()) dep.version = obj.at("version").asString();
                             if (obj.count("path") && obj.at("path").isString()) dep.path = obj.at("path").asString();
+                            if (obj.count("hash") && obj.at("hash").isString()) dep.hash = obj.at("hash").asString();
                             deps.push_back(dep);
                         }
                     }
@@ -82,6 +87,37 @@ public:
         }
 
         return deps;
+    }
+
+    static bool verify_lockfile_integrity(const std::string& project_root) {
+        auto deps = read_lockfile(project_root);
+        for (const auto& dep : deps) {
+            if (dep.path.empty() || !fs::exists(dep.path)) {
+                std::cerr << "error: locked dependency '" << dep.name << "' not found at " << dep.path << "\n";
+                return false;
+            }
+            if (!dep.hash.empty()) {
+                std::string expected_hash = dep.hash;
+                if (expected_hash.rfind("sha256:", 0) == 0) {
+                    expected_hash = expected_hash.substr(7);
+                }
+                std::string actual_hash = CryptoHelper::calculate_package_hash(dep.path);
+
+                std::string tarball_hash = "";
+                fs::path cached_tar = fs::path(dep.path).string() + ".tar.gz";
+                if (fs::exists(cached_tar)) {
+                    tarball_hash = CryptoHelper::sha256_file(cached_tar.string());
+                }
+
+                if (actual_hash != expected_hash && tarball_hash != expected_hash) {
+                    std::cerr << "error: package integrity verification failed for '" << dep.name << "@" << dep.version << "'\n";
+                    std::cerr << "  Expected: " << expected_hash << "\n";
+                    std::cerr << "  Actual:   " << actual_hash << "\n";
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 };
 

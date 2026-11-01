@@ -3,6 +3,7 @@
 #include "registry_client.hh"
 #include "index_client.hh"
 #include "crypto_helper.hh"
+#include "tar_helper.hh"
 #include "lyra_common.hh"
 #include "nol.hpp"
 #include <iostream>
@@ -67,8 +68,7 @@ int handle_publish(int argc, char** argv) {
         std::cout << "Packaging project '" << meta.name << "' version " << meta.version << "...\n";
         
         std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
-        std::string pack_cmd = "tar -czf \"" + tarball + "\" src lymar.nol";
-        if (std::system(pack_cmd.c_str()) != 0) {
+        if (!TarHelper::pack_to_tar_gz({"src", "lymar.nol"}, tarball)) {
             std::cerr << "error: failed to create tarball\n";
             return 1;
         }
@@ -330,19 +330,20 @@ int handle_pack(int argc, char** argv) {
         return 1;
     }
 
+    (void)argc;
+    (void)argv;
     std::string tarball = meta.name + "-" + meta.version + ".tar.gz";
     std::cout << "Packaging " << meta.name << " v" << meta.version << " into " << tarball << "...\n";
 
-    std::string pack_cmd = "tar -czf \"" + tarball + "\" src lymar.nol";
-    int result = std::system(pack_cmd.c_str());
+    bool success = TarHelper::pack_to_tar_gz({"src", "lymar.nol"}, tarball);
 
-    if (result == 0) {
+    if (success) {
         std::cout << "Successfully packaged to " << tarball << "\n";
     } else {
         std::cerr << "error: failed to create package\n";
     }
 
-    return (result == 0) ? 0 : 1;
+    return success ? 0 : 1;
 }
 
 int handle_install(int argc, char** argv) {
@@ -361,8 +362,7 @@ int handle_install(int argc, char** argv) {
     fs::path temp_dir = fs::temp_directory_path() / ("lyra_install_temp_" + std::to_string(Lyra::get_process_id()));
     fs::create_directories(temp_dir);
 
-    std::string extract_cmd = "tar -xzf \"" + tar_path.string() + "\" -C \"" + temp_dir.string() + "\"";
-    if (std::system(extract_cmd.c_str()) != 0) {
+    if (!TarHelper::extract_tar_gz(tar_path.string(), temp_dir.string())) {
         std::cerr << "error: failed to extract " << tar_path << "\n";
         fs::remove_all(temp_dir);
         return 1;
