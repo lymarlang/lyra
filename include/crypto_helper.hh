@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <openssl/evp.h>
+#include <openssl/pem.h>
 
 namespace fs = std::filesystem;
 
@@ -127,6 +128,51 @@ public:
             return sha256_dir(path);
         }
         return "";
+    }
+
+    // Public-key cryptographic signature verification using OpenSSL EVP (supports Ed25519 / RSA)
+    static bool verify_package_signature(const std::string& data,
+                                         const std::string& signature_hex,
+                                         const std::string& public_key_pem) {
+        if (data.empty() || signature_hex.empty() || public_key_pem.empty()) {
+            return false;
+        }
+
+        BIO* bio = BIO_new_mem_buf(public_key_pem.data(), static_cast<int>(public_key_pem.size()));
+        if (!bio) return false;
+
+        EVP_PKEY* pkey = nullptr;
+        // Try reading public key
+        pkey = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+        BIO_free(bio);
+        if (!pkey) return false;
+
+        // Convert hex signature to binary
+        std::vector<unsigned char> sig_bytes;
+        for (size_t i = 0; i + 1 < signature_hex.size(); i += 2) {
+            std::string byteString = signature_hex.substr(i, 2);
+            unsigned char b = static_cast<unsigned char>(std::strtoul(byteString.c_str(), nullptr, 16));
+            sig_bytes.push_back(b);
+        }
+
+        EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+        if (!md_ctx) {
+            EVP_PKEY_free(pkey);
+            return false;
+        }
+
+        bool verified = false;
+        if (EVP_DigestVerifyInit(md_ctx, nullptr, EVP_sha256(), nullptr, pkey) > 0) {
+            if (EVP_DigestVerifyUpdate(md_ctx, data.data(), data.size()) > 0) {
+                if (EVP_DigestVerifyFinal(md_ctx, sig_bytes.data(), sig_bytes.size()) > 0) {
+                    verified = true;
+                }
+            }
+        }
+
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        return verified;
     }
 
 private:
