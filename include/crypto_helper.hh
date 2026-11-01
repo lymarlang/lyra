@@ -130,7 +130,7 @@ public:
         return "";
     }
 
-    // Keypair generation (Ed25519)
+    // Keypair generation (Ed25519) - Uses in-memory BIOs for cross-platform OpenSSL compatibility
     static bool generate_keypair(const std::string& privkey_path, const std::string& pubkey_path) {
         EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, nullptr);
         if (!pctx) return false;
@@ -145,32 +145,56 @@ public:
         }
         EVP_PKEY_CTX_free(pctx);
 
-        FILE* priv_file = fopen(privkey_path.c_str(), "wb");
-        if (!priv_file) {
+        BIO* priv_bio = BIO_new(BIO_s_mem());
+        if (!priv_bio) {
             EVP_PKEY_free(pkey);
             return false;
         }
-        PEM_write_PrivateKey(priv_file, pkey, nullptr, nullptr, 0, nullptr, nullptr);
-        fclose(priv_file);
+        PEM_write_bio_PrivateKey(priv_bio, pkey, nullptr, nullptr, 0, nullptr, nullptr);
+        char* priv_data = nullptr;
+        long priv_len = BIO_get_mem_data(priv_bio, &priv_data);
+        std::ofstream priv_file(privkey_path, std::ios::binary);
+        if (!priv_file.is_open()) {
+            BIO_free(priv_bio);
+            EVP_PKEY_free(pkey);
+            return false;
+        }
+        priv_file.write(priv_data, priv_len);
+        priv_file.close();
+        BIO_free(priv_bio);
 
-        FILE* pub_file = fopen(pubkey_path.c_str(), "wb");
-        if (!pub_file) {
+        BIO* pub_bio = BIO_new(BIO_s_mem());
+        if (!pub_bio) {
             EVP_PKEY_free(pkey);
             return false;
         }
-        PEM_write_PUBKEY(pub_file, pkey);
-        fclose(pub_file);
+        PEM_write_bio_PUBKEY(pub_bio, pkey);
+        char* pub_data = nullptr;
+        long pub_len = BIO_get_mem_data(pub_bio, &pub_data);
+        std::ofstream pub_file(pubkey_path, std::ios::binary);
+        if (!pub_file.is_open()) {
+            BIO_free(pub_bio);
+            EVP_PKEY_free(pkey);
+            return false;
+        }
+        pub_file.write(pub_data, pub_len);
+        pub_file.close();
+        BIO_free(pub_bio);
 
         EVP_PKEY_free(pkey);
         return true;
     }
 
-    // Sign a file using Ed25519 private key
+    // Sign a file using Ed25519 private key - Uses in-memory BIO
     static std::string sign_file(const std::string& file_path, const std::string& privkey_path) {
-        FILE* priv_file = fopen(privkey_path.c_str(), "rb");
-        if (!priv_file) return "";
-        EVP_PKEY* pkey = PEM_read_PrivateKey(priv_file, nullptr, nullptr, nullptr);
-        fclose(priv_file);
+        std::ifstream kf(privkey_path, std::ios::binary);
+        if (!kf.is_open()) return "";
+        std::string kstr((std::istreambuf_iterator<char>(kf)), std::istreambuf_iterator<char>());
+        kf.close();
+        BIO* kbio = BIO_new_mem_buf(kstr.data(), (int)kstr.size());
+        if (!kbio) return "";
+        EVP_PKEY* pkey = PEM_read_bio_PrivateKey(kbio, nullptr, nullptr, nullptr);
+        BIO_free(kbio);
         if (!pkey) return "";
 
         std::ifstream file(file_path, std::ios::binary);
@@ -214,12 +238,16 @@ public:
         return to_hex(sig.data(), sig_len);
     }
 
-    // Verify file signature using Ed25519 public key
+    // Verify file signature using Ed25519 public key - Uses in-memory BIO
     static bool verify_file_signature(const std::string& file_path, const std::string& hex_signature, const std::string& pubkey_path) {
-        FILE* pub_file = fopen(pubkey_path.c_str(), "rb");
-        if (!pub_file) return false;
-        EVP_PKEY* pkey = PEM_read_PUBKEY(pub_file, nullptr, nullptr, nullptr);
-        fclose(pub_file);
+        std::ifstream pf(pubkey_path, std::ios::binary);
+        if (!pf.is_open()) return false;
+        std::string pstr((std::istreambuf_iterator<char>(pf)), std::istreambuf_iterator<char>());
+        pf.close();
+        BIO* pbio = BIO_new_mem_buf(pstr.data(), (int)pstr.size());
+        if (!pbio) return false;
+        EVP_PKEY* pkey = PEM_read_bio_PUBKEY(pbio, nullptr, nullptr, nullptr);
+        BIO_free(pbio);
         if (!pkey) return false;
 
         std::ifstream file(file_path, std::ios::binary);

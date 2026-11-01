@@ -557,7 +557,15 @@ int handle_cache_clear() {
 
     if (fs::exists(cache_dir)) {
         std::cout << "Clearing lyra cache at " << cache_dir << "...\n";
-        fs::remove_all(cache_dir);
+        std::error_code ec;
+        for (const auto& entry : fs::recursive_directory_iterator(cache_dir, fs::directory_options::skip_permission_denied, ec)) {
+            fs::permissions(entry.path(), fs::perms::all, fs::perm_options::replace, ec);
+        }
+        fs::remove_all(cache_dir, ec);
+        if (ec) {
+            std::cerr << "warning: could not completely clear cache: " << ec.message() << "\n";
+            return 1;
+        }
         std::cout << "Cache cleared.\n";
     } else {
         std::cout << "Cache is already empty.\n";

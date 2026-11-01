@@ -446,7 +446,7 @@ int handle_sign(int argc, char** argv) {
     std::string key_file = "lyra.key";
     for (int i = 3; i < argc; ++i) {
         std::string arg = argv[i];
-        if ((arg == "--key" || arg == "-k") && i + 1 < argc) {
+        if ((arg == "--key" || arg == "-k" || arg == "--pubkey") && i + 1 < argc) {
             key_file = argv[++i];
         }
     }
@@ -482,7 +482,7 @@ int handle_verify(int argc, char** argv) {
     std::string sig_file = tarball + ".sig";
     for (int i = 3; i < argc; ++i) {
         std::string arg = argv[i];
-        if ((arg == "--key" || arg == "-k") && i + 1 < argc) {
+        if ((arg == "--key" || arg == "-k" || arg == "--pubkey") && i + 1 < argc) {
             key_file = argv[++i];
         } else if ((arg == "--sig" || arg == "-s") && i + 1 < argc) {
             sig_file = argv[++i];
