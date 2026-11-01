@@ -3,6 +3,7 @@
 #include "process_helper.hh"
 #include "resolver.hh"
 #include "lock_system.hh"
+#include "watch_daemon.hh"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -26,6 +27,29 @@ int handle_run(int argc, char** argv) {
     bool locked = false;
     bool frozen = false;
     bool offline = false;
+    bool watch_mode = false;
+
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--watch") {
+            watch_mode = true;
+            continue;
+        }
+    }
+
+    if (watch_mode) {
+        std::vector<char*> non_watch_argv;
+        for (int i = 0; i < argc; ++i) {
+            if (std::string(argv[i]) != "--watch") {
+                non_watch_argv.push_back(argv[i]);
+            }
+        }
+        std::vector<std::string> watch_dirs = {"src"};
+        WatchDaemon::watch(watch_dirs, [&]() {
+            handle_run(static_cast<int>(non_watch_argv.size()), non_watch_argv.data());
+        });
+        return 0;
+    }
 
     for (int i = 2; i < argc; ++i) {
         std::string arg = argv[i];

@@ -406,6 +406,102 @@ int handle_install(int argc, char** argv) {
     return 0;
 }
 
+int handle_keygen(int argc, char** argv) {
+    std::string privkey_path = "lyra.key";
+    std::string pubkey_path = "lyra.pub";
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-o" && i + 1 < argc) {
+            privkey_path = argv[++i];
+            pubkey_path = privkey_path + ".pub";
+        }
+    }
+    if (CryptoHelper::generate_keypair(privkey_path, pubkey_path)) {
+        std::cout << "Generated Ed25519 keypair:\n";
+        std::cout << "  Private Key: " << privkey_path << "\n";
+        std::cout << "  Public Key:  " << pubkey_path << "\n";
+        return 0;
+    }
+    std::cerr << "error: failed to generate keypair\n";
+    return 1;
+}
+
+int handle_sign(int argc, char** argv) {
+    if (argc < 3) {
+        std::cerr << "usage: lyra sign <tarball> [--key <key_file>]\n";
+        return 1;
+    }
+    std::string tarball = argv[2];
+    std::string key_file = "lyra.key";
+    for (int i = 3; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "--key" || arg == "-k") && i + 1 < argc) {
+            key_file = argv[++i];
+        }
+    }
+    if (!fs::exists(tarball)) {
+        std::cerr << "error: package file '" << tarball << "' does not exist\n";
+        return 1;
+    }
+    if (!fs::exists(key_file)) {
+        std::cerr << "error: private key file '" << key_file << "' not found\n";
+        return 1;
+    }
+    std::string sig = CryptoHelper::sign_file(tarball, key_file);
+    if (sig.empty()) {
+        std::cerr << "error: failed to sign package\n";
+        return 1;
+    }
+    std::string sig_file = tarball + ".sig";
+    std::ofstream out(sig_file);
+    out << sig << "\n";
+    out.close();
+    std::cout << "Package signed successfully.\n";
+    std::cout << "Signature written to: " << sig_file << "\n";
+    return 0;
+}
+
+int handle_verify(int argc, char** argv) {
+    if (argc < 3) {
+        std::cerr << "usage: lyra verify <tarball> [--key <pubkey_file>] [--sig <sig_file>]\n";
+        return 1;
+    }
+    std::string tarball = argv[2];
+    std::string key_file = "lyra.pub";
+    std::string sig_file = tarball + ".sig";
+    for (int i = 3; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "--key" || arg == "-k") && i + 1 < argc) {
+            key_file = argv[++i];
+        } else if ((arg == "--sig" || arg == "-s") && i + 1 < argc) {
+            sig_file = argv[++i];
+        }
+    }
+    if (!fs::exists(tarball)) {
+        std::cerr << "error: package file '" << tarball << "' does not exist\n";
+        return 1;
+    }
+    if (!fs::exists(key_file)) {
+        std::cerr << "error: public key file '" << key_file << "' not found\n";
+        return 1;
+    }
+    if (!fs::exists(sig_file)) {
+        std::cerr << "error: signature file '" << sig_file << "' not found\n";
+        return 1;
+    }
+    std::ifstream in(sig_file);
+    std::string sig;
+    in >> sig;
+    in.close();
+
+    if (CryptoHelper::verify_file_signature(tarball, sig, key_file)) {
+        std::cout << "\x1b[32m[OK] Signature verified successfully with public key: " << key_file << "\x1b[0m\n";
+        return 0;
+    }
+    std::cerr << "\x1b[31m[ERROR] Cryptographic signature verification failed!\x1b[0m\n";
+    return 1;
+}
+
 int handle_search(int argc, char** argv) {
     if (argc < 3) {
         std::cerr << "error: missing search query\n";

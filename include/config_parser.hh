@@ -39,6 +39,8 @@ struct PackageMetadata {
     // [native] header binding generation (roadmap item 2b).
     std::vector<std::string> bind_headers;
     std::vector<std::string> bind_lib_paths;
+    // [patch] / [replace] dependency overrides
+    std::map<std::string, Dependency> patches;
 };
 
 class ConfigParser {
@@ -117,6 +119,31 @@ public:
                     }
                 }
             }
+
+            // Parse [patch] / [replace]
+            auto parse_patch_map = [&](const NOL::Value* patch_val) {
+                if (patch_val && patch_val->isObject()) {
+                    for (const auto& [name, val] : patch_val->asObject()) {
+                        Dependency dep;
+                        dep.name = name;
+                        if (val.isString()) {
+                            dep.version = val.asString();
+                        } else if (val.isObject()) {
+                            const auto& dep_obj = val.asObject();
+                            if (dep_obj.count("version") && dep_obj.at("version").isString()) dep.version = dep_obj.at("version").asString();
+                            if (dep_obj.count("path") && dep_obj.at("path").isString()) dep.path = dep_obj.at("path").asString();
+                            if (dep_obj.count("git") && dep_obj.at("git").isString()) dep.git = dep_obj.at("git").asString();
+                            if (dep_obj.count("github") && dep_obj.at("github").isString()) dep.git = "https://github.com/" + dep_obj.at("github").asString() + ".git";
+                            if (dep_obj.count("tag") && dep_obj.at("tag").isString()) dep.tag = dep_obj.at("tag").asString();
+                            if (dep_obj.count("branch") && dep_obj.at("branch").isString()) dep.tag = dep_obj.at("branch").asString();
+                            if (dep_obj.count("rev") && dep_obj.at("rev").isString()) dep.tag = dep_obj.at("rev").asString();
+                        }
+                        meta.patches[name] = dep;
+                    }
+                }
+            };
+            parse_patch_map(doc.get("patch"));
+            parse_patch_map(doc.get("replace"));
 
             // Parse [features]
             if (const auto* feats = doc.get("features")) {

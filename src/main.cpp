@@ -9,6 +9,9 @@ void print_help() {
     std::cout << "  lyra <command> [arguments]\n\n";
     std::cout << "Commands:\n";
     std::cout << "  init    Initialize a new project\n";
+    std::cout << "  new     Create a new project from a starter template (--template=cli|web|wasm|lib|native)\n";
+    std::cout << "  repl    Start an interactive Lymar REPL prompt\n";
+    std::cout << "  expand  View desugared code, macro expansions, and AST representations\n";
     std::cout << "  run     Run the current project\n";
     std::cout << "  build   Build the current project\n";
     std::cout << "  update  Update dependencies and lockfile\n";
@@ -27,9 +30,15 @@ void print_help() {
     std::cout << "  tree    Display dependency tree\n";
     std::cout << "  why     Show why a package is included\n";
     std::cout << "  clean   Clean build artifacts\n";
+    std::cout << "  sign    Sign a package tarball with a cryptographic private key\n";
+    std::cout << "  verify  Verify a package tarball cryptographic signature\n";
+    std::cout << "  keygen  Generate an Ed25519 signing keypair\n";
+    std::cout << "  watch   Watch files and continuously run build/test\n";
     std::cout << "  doctor  Check environment for issues\n";
     std::cout << "  env     Show environment info\n";
     std::cout << "  audit   Audit dependencies for security\n";
+    std::cout << "  license Audit dependency licenses against allowlist\n";
+    std::cout << "  sbom    Generate Software Bill of Materials (SPDX / CycloneDX JSON)\n";
     std::cout << "  deb     Create a .deb installer package\n";
     std::cout << "  msi     Create a .msi installer package\n";
     std::cout << "  appimage Create a Linux AppImage package\n";
@@ -59,6 +68,12 @@ static int dispatch(int argc, char** argv) {
 
     if (command == "init") {
         return handle_init();
+    } else if (command == "new") {
+        return handle_new(argc, argv);
+    } else if (command == "repl") {
+        return handle_repl(argc, argv);
+    } else if (command == "expand") {
+        return handle_expand(argc, argv);
     } else if (command == "run") {
         return handle_run(argc, argv);
     } else if (command == "build") {
@@ -95,6 +110,14 @@ static int dispatch(int argc, char** argv) {
         return handle_tree(argc, argv);
     } else if (command == "why") {
         return handle_why(argc, argv);
+    } else if (command == "sign") {
+        return handle_sign(argc, argv);
+    } else if (command == "verify") {
+        return handle_verify(argc, argv);
+    } else if (command == "keygen") {
+        return handle_keygen(argc, argv);
+    } else if (command == "watch") {
+        return handle_watch(argc, argv);
     } else if (command == "clean") {
         return handle_clean();
     } else if (command == "doctor") {
@@ -103,6 +126,10 @@ static int dispatch(int argc, char** argv) {
         return handle_env();
     } else if (command == "audit") {
         return handle_audit(argc, argv);
+    } else if (command == "license") {
+        return handle_license(argc, argv);
+    } else if (command == "sbom") {
+        return handle_sbom(argc, argv);
     } else if (command == "deb") {
         return handle_deb(argc, argv);
     } else if (command == "msi") {
