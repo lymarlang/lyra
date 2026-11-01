@@ -32,6 +32,7 @@ struct PackageCandidate {
     std::string version;
     std::string path;
     std::map<std::string, std::string> dependencies;
+    std::map<std::string, Dependency> dep_specs;
     std::string hash;
 };
 
@@ -78,12 +79,14 @@ public:
         }
 
         std::map<std::string, PackageCandidate> selected;
+        std::map<std::string, std::set<std::string>> dep_graph;
         std::map<std::string, std::vector<std::pair<std::string, std::string>>> constraints;
         for (const auto& [name, req] : root_constraints) {
             constraints[name].push_back({root_meta.name, req});
+            dep_graph[root_meta.name].insert(name);
         }
 
-        if (!backtrack_solve(selected, constraints, root_dep_specs, root_meta.patches, abs_root, offline, mvs)) {
+        if (!backtrack_solve(selected, constraints, root_dep_specs, root_meta.patches, abs_root, root_meta.name, dep_graph, offline, mvs)) {
             std::cerr << "error: unable to find a compatible dependency version resolution (PubGrub conflict detected)\n";
             for (const auto& [pkg, req_list] : constraints) {
                 std::cerr << "  Package '" << pkg << "' required with constraints:\n";
@@ -115,11 +118,28 @@ public:
     }
 
 private:
+    static bool has_path(const std::string& from, const std::string& to,
+                         const std::map<std::string, std::set<std::string>>& graph,
+                         std::set<std::string>& visited) {
+        if (from == to) return true;
+        if (visited.count(from)) return false;
+        visited.insert(from);
+        auto it = graph.find(from);
+        if (it != graph.end()) {
+            for (const auto& next : it->second) {
+                if (has_path(next, to, graph, visited)) return true;
+            }
+        }
+        return false;
+    }
+
     static bool backtrack_solve(std::map<std::string, PackageCandidate>& selected,
                                 std::map<std::string, std::vector<std::pair<std::string, std::string>>>& constraints,
                                 const std::map<std::string, Dependency>& root_dep_specs,
                                 const std::map<std::string, Dependency>& patches,
                                 const std::string& project_root,
+                                const std::string& root_name,
+                                std::map<std::string, std::set<std::string>>& dep_graph,
                                 bool offline,
                                 bool mvs) {
         std::string next_pkg;
@@ -140,7 +160,7 @@ private:
             effective_specs[next_pkg] = patches.at(next_pkg);
         }
 
-        std::vector<PackageCandidate> candidates = get_candidates(next_pkg, effective_specs, project_root, offline);
+        std::vector<PackageCandidate> candidates = get_candidates(next_pkg, effective_specs, project_root, selected, constraints, offline);
 
         std::sort(candidates.begin(), candidates.end(), [mvs](const PackageCandidate& a, const PackageCandidate& b) {
             Version va = Version::parse(a.version);
@@ -169,6 +189,12 @@ private:
             std::map<std::string, std::vector<std::pair<std::string, std::string>>> new_constraints = constraints;
             bool conflict = false;
             for (const auto& [dep_name, dep_req] : cand.dependencies) {
+                std::set<std::string> visited;
+                if (dep_name == root_name || has_path(dep_name, cand.name, dep_graph, visited)) {
+                    std::cerr << "error: circular dependency detected involving '" << cand.name << "'\n";
+                    throw std::runtime_error("Dependency resolution failed");
+                }
+                dep_graph[cand.name].insert(dep_name);
                 if (selected.find(dep_name) != selected.end()) {
                     if (!Semver::satisfies(selected[dep_name].version, dep_req)) {
                         conflict = true;
@@ -179,11 +205,12 @@ private:
             }
 
             if (!conflict) {
-                if (backtrack_solve(selected, new_constraints, root_dep_specs, patches, project_root, offline, mvs)) {
+                if (backtrack_solve(selected, new_constraints, root_dep_specs, patches, project_root, root_name, dep_graph, offline, mvs)) {
                     return true;
                 }
             }
 
+            dep_graph.erase(cand.name);
             selected.erase(next_pkg);
         }
 
@@ -193,6 +220,8 @@ private:
     static std::vector<PackageCandidate> get_candidates(const std::string& name,
                                                        const std::map<std::string, Dependency>& root_dep_specs,
                                                        const std::string& project_root,
+                                                       const std::map<std::string, PackageCandidate>& selected,
+                                                       const std::map<std::string, std::vector<std::pair<std::string, std::string>>>& constraints,
                                                        bool offline) {
         std::vector<PackageCandidate> candidates;
 
@@ -208,6 +237,7 @@ private:
                     c.path = fs::weakly_canonical(p).string();
                     for (const auto& [dname, d] : meta.dependencies) {
                         c.dependencies[dname] = d.version.empty() ? "*" : d.version;
+                        c.dep_specs[dname] = d;
                     }
                     candidates.push_back(c);
                     return candidates;
@@ -222,9 +252,55 @@ private:
                     c.path = fs::weakly_canonical(dep_path).string();
                     for (const auto& [dname, d] : meta.dependencies) {
                         c.dependencies[dname] = d.version.empty() ? "*" : d.version;
+                        c.dep_specs[dname] = d;
                     }
                     candidates.push_back(c);
                     return candidates;
+                }
+            }
+        }
+
+        auto cit = constraints.find(name);
+        if (cit != constraints.end()) {
+            for (const auto& [req_by, req_ver] : cit->second) {
+                auto sit = selected.find(req_by);
+                if (sit != selected.end()) {
+                    const auto& parent_cand = sit->second;
+                    auto dit = parent_cand.dep_specs.find(name);
+                    if (dit != parent_cand.dep_specs.end()) {
+                        const auto& spec = dit->second;
+                        if (!spec.path.empty()) {
+                            fs::path p = fs::path(parent_cand.path) / spec.path;
+                            if (fs::exists(p / "lymar.nol")) {
+                                PackageMetadata meta = ConfigParser::parse((p / "lymar.nol").string());
+                                PackageCandidate c;
+                                c.name = name;
+                                c.version = meta.version.empty() ? "0.0.0" : meta.version;
+                                c.path = fs::weakly_canonical(p).string();
+                                for (const auto& [dname, d] : meta.dependencies) {
+                                    c.dependencies[dname] = d.version.empty() ? "*" : d.version;
+                                    c.dep_specs[dname] = d;
+                                }
+                                candidates.push_back(c);
+                                return candidates;
+                            }
+                        } else if (!spec.git.empty() && !offline) {
+                            std::string dep_path = FetchSystem::fetch_git(name, spec.git, spec.tag);
+                            if (!dep_path.empty() && fs::exists(dep_path + "/lymar.nol")) {
+                                PackageMetadata meta = ConfigParser::parse(dep_path + "/lymar.nol");
+                                PackageCandidate c;
+                                c.name = name;
+                                c.version = meta.version.empty() ? "0.0.0" : meta.version;
+                                c.path = fs::weakly_canonical(dep_path).string();
+                                for (const auto& [dname, d] : meta.dependencies) {
+                                    c.dependencies[dname] = d.version.empty() ? "*" : d.version;
+                                    c.dep_specs[dname] = d;
+                                }
+                                candidates.push_back(c);
+                                return candidates;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -238,6 +314,7 @@ private:
             c.path = fs::weakly_canonical(vendor_path).string();
             for (const auto& [dname, d] : meta.dependencies) {
                 c.dependencies[dname] = d.version.empty() ? "*" : d.version;
+                c.dep_specs[dname] = d;
             }
             candidates.push_back(c);
             return candidates;
@@ -280,6 +357,7 @@ private:
                             c.path = fs::weakly_canonical(entry.path()).string();
                             for (const auto& [dname, d] : m.dependencies) {
                                 c.dependencies[dname] = d.version.empty() ? "*" : d.version;
+                                c.dep_specs[dname] = d;
                             }
                             bool dup = false;
                             for (const auto& ex : candidates) {

@@ -36,6 +36,8 @@ inline int handle_bench(int argc, char** argv) { return ::handle_bench(argc, arg
 inline int handle_lint(int argc, char** argv) { return ::handle_lint(argc, argv); }
 inline int handle_doc(int argc, char** argv) { return ::handle_doc(argc, argv); }
 inline int handle_profile(int argc, char** argv) { return ::handle_profile(argc, argv); }
+inline int handle_deb(int argc, char** argv) { return ::handle_deb(argc, argv); }
+inline int handle_msi(int argc, char** argv) { return ::handle_msi(argc, argv); }
 
 } // namespace Lyra
 

@@ -319,6 +319,17 @@ int handle_link(int argc, char** argv) {
 }
 
 int handle_pack(int argc, char** argv) {
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--deb" || arg == "-deb") return handle_deb(argc, argv);
+        if (arg == "--msi" || arg == "-msi") return handle_msi(argc, argv);
+        if (arg == "--appimage" || arg == "-appimage") return handle_appimage(argc, argv);
+        if (arg == "--snap" || arg == "-snap") return handle_snap(argc, argv);
+        if (arg == "--flatpak" || arg == "-flatpak") return handle_flatpak(argc, argv);
+        if (arg == "--zip" || arg == "-zip") return handle_zip(argc, argv);
+        if (arg == "--dmg" || arg == "-dmg") return handle_dmg(argc, argv);
+    }
+
     PackageMetadata meta = ConfigParser::parse("lymar.nol");
     if (meta.name.empty()) {
         std::cerr << "error: could not find lymar.nol or package name\n";

@@ -15,6 +15,8 @@
 
 namespace fs = std::filesystem;
 
+static std::vector<uint8_t> get_or_build_binary(const PackageMetadata& meta, int argc, char** argv);
+
 static std::vector<uint8_t> read_binary_file(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) return {};
@@ -49,19 +51,8 @@ int handle_deb(int argc, char** argv) {
         output_file = meta.name + "_" + meta.version + "_" + arch + ".deb";
     }
 
-    // Binary name to package
     std::string bin_name = meta.name;
-    if (!fs::exists(bin_name)) {
-        // Build the project first if the binary doesn't exist yet
-        std::cout << "Binary '" << bin_name << "' not found. Running build...\n";
-        int build_res = handle_build(argc, argv);
-        if (build_res != 0 || !fs::exists(bin_name)) {
-            std::cerr << "error: build failed or binary '" << bin_name << "' not created\n";
-            return 1;
-        }
-    }
-
-    std::vector<uint8_t> bin_data = read_binary_file(bin_name);
+    std::vector<uint8_t> bin_data = get_or_build_binary(meta, argc, argv);
     if (bin_data.empty()) {
         std::cerr << "error: failed to read binary '" << bin_name << "'\n";
         return 1;
@@ -262,6 +253,24 @@ int handle_msi(int argc, char** argv) {
     if (!MsiBuilder::build_msi(meta.name, meta.version, manufacturer, meta.description, exe_name, bin_data, output_file)) {
         std::cerr << "error: failed to create msi package\n";
         return 1;
+    }
+
+    // Also write WiX XML template (.wxs)
+    std::string wxs_path = meta.name + ".wxs";
+    std::ofstream wxs(wxs_path);
+    if (wxs.is_open()) {
+        wxs << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+        wxs << "<Wix xmlns=\"http://schemas.microsoft.com/wix/2006/wi\">\n";
+        wxs << "  <Product Id=\"*\" Name=\"" << meta.name << "\" Version=\"" << meta.version << "\" Manufacturer=\"" << manufacturer << "\" UpgradeCode=\"" << MsiBuilder::generate_guid("UpgradeCode:" + meta.name) << "\">\n";
+        wxs << "    <Package InstallerVersion=\"200\" Compressed=\"yes\" InstallScope=\"perMachine\" />\n";
+        wxs << "    <MajorUpgrade DowngradeErrorMessage=\"A newer version is already installed.\" />\n";
+        wxs << "    <MediaTemplate EmbedCab=\"yes\" />\n";
+        wxs << "    <Feature Id=\"MainApplication\" Title=\"" << meta.name << "\" Level=\"1\">\n";
+        wxs << "      <ComponentGroupRef Id=\"AppComponents\" />\n";
+        wxs << "    </Feature>\n";
+        wxs << "  </Product>\n";
+        wxs << "</Wix>\n";
+        wxs.close();
     }
 
     std::cout << "Successfully created " << output_file << "\n";
