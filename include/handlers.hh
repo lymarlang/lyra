@@ -30,5 +30,14 @@ int handle_doc(int argc, char** argv);
 int handle_profile(int argc, char** argv);
 int handle_deb(int argc, char** argv);
 int handle_msi(int argc, char** argv);
+int handle_appimage(int argc, char** argv);
+int handle_snap(int argc, char** argv);
+int handle_flatpak(int argc, char** argv);
+int handle_zip(int argc, char** argv);
+int handle_dmg(int argc, char** argv);
+int handle_toolchain(int argc, char** argv);
+int handle_lsp(int argc, char** argv);
+int handle_fmt(int argc, char** argv);
+int handle_vendor(int argc, char** argv);
 
 #endif

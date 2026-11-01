@@ -65,6 +65,25 @@ inline std::string get_default_index_url() {
 inline std::string find_compiler_path() {
     if (const char* configured = std::getenv("LYMAR_EXECUTABLE"); configured && *configured)
         return configured;
+
+    fs::path toolchains_dir = get_cache_dir().parent_path() / "toolchains";
+    fs::path active_file = toolchains_dir / "active";
+    if (fs::exists(active_file)) {
+        std::ifstream af(active_file);
+        std::string active_ver;
+        if (std::getline(af, active_ver)) {
+            while (!active_ver.empty() && (active_ver.back() == '\r' || active_ver.back() == '\n' || active_ver.back() == ' ')) {
+                active_ver.pop_back();
+            }
+            if (!active_ver.empty()) {
+                fs::path active_bin = toolchains_dir / active_ver / "bin" / ("lymar" LYRA_EXE_SUFFIX);
+                if (fs::exists(active_bin)) {
+                    return active_bin.string();
+                }
+            }
+        }
+    }
+
     // 1. Check directory where lyra binary itself is located
 #ifdef _WIN32
     char exe_buf[MAX_PATH];

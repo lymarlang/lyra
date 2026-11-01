@@ -3,6 +3,7 @@
 
 #include "lyra_common.hh"
 #include "crypto_helper.hh"
+#include "tar_helper.hh"
 #include "fetch_system.hh"
 #include "semver.hh"
 #include "nol.hpp"
@@ -238,8 +239,7 @@ public:
             }
 
             fs::create_directories(pkg_dir);
-            std::string extract_cmd = "tar -xzf \"" + tar_path.string() + "\" -C \"" + pkg_dir.string() + "\"" + LYRA_DEV_NULL;
-            std::system(extract_cmd.c_str());
+            TarHelper::extract_tar_gz(tar_path.string(), pkg_dir.string());
 
             // Handle GitHub archives which extract to an inner directory (e.g. repo-1.0.0/)
             if (!fs::exists(pkg_dir / "lymar.nol")) {

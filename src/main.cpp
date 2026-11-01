@@ -32,6 +32,15 @@ void print_help() {
     std::cout << "  audit   Audit dependencies for security\n";
     std::cout << "  deb     Create a .deb installer package\n";
     std::cout << "  msi     Create a .msi installer package\n";
+    std::cout << "  appimage Create a Linux AppImage package\n";
+    std::cout << "  snap    Create a Snap package\n";
+    std::cout << "  flatpak Create a Flatpak bundle\n";
+    std::cout << "  zip     Create a Windows portable standalone zip\n";
+    std::cout << "  dmg     Create a macOS disk image / pkg\n";
+    std::cout << "  toolchain Manage Lymar compiler toolchains\n";
+    std::cout << "  lsp     Start Lymar language server\n";
+    std::cout << "  fmt     Format Lymar source files\n";
+    std::cout << "  vendor  Vendor all dependencies into local vendor/ directory\n";
     std::cout << "  help    Show this help message\n";
 }
 
@@ -98,6 +107,24 @@ static int dispatch(int argc, char** argv) {
         return handle_deb(argc, argv);
     } else if (command == "msi") {
         return handle_msi(argc, argv);
+    } else if (command == "appimage") {
+        return handle_appimage(argc, argv);
+    } else if (command == "snap") {
+        return handle_snap(argc, argv);
+    } else if (command == "flatpak") {
+        return handle_flatpak(argc, argv);
+    } else if (command == "zip") {
+        return handle_zip(argc, argv);
+    } else if (command == "dmg" || command == "pkg") {
+        return handle_dmg(argc, argv);
+    } else if (command == "toolchain") {
+        return handle_toolchain(argc, argv);
+    } else if (command == "lsp") {
+        return handle_lsp(argc, argv);
+    } else if (command == "fmt") {
+        return handle_fmt(argc, argv);
+    } else if (command == "vendor") {
+        return handle_vendor(argc, argv);
     }
 
     std::cerr << "error: unknown command '" << command << "'\n\n";

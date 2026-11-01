@@ -3,6 +3,7 @@
 #include "process_helper.hh"
 #include "resolver.hh"
 #include "lock_system.hh"
+#include "workspace.hh"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -12,6 +13,40 @@
 namespace fs = std::filesystem;
 
 int handle_build(int argc, char** argv) {
+    bool build_workspace = false;
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--workspace") {
+            build_workspace = true;
+        }
+    }
+
+    if (build_workspace || Workspace::is_workspace(".")) {
+        std::cout << "Building workspace members...\n";
+        auto members = Workspace::get_members(".");
+        if (members.empty()) {
+            std::cout << "No workspace members found.\n";
+            return 0;
+        }
+        Workspace::resolve_workspace(".");
+        int overall_result = 0;
+        for (const auto& m : members) {
+            std::cout << "==> Building member '" << m.name << "' in " << m.path << "\n";
+            std::string orig_dir = fs::current_path().string();
+            fs::current_path(m.path);
+            std::vector<char*> member_argv;
+            for (int a = 0; a < argc; ++a) {
+                if (std::string(argv[a]) != "--workspace") {
+                    member_argv.push_back(argv[a]);
+                }
+            }
+            int res = handle_build(static_cast<int>(member_argv.size()), member_argv.data());
+            fs::current_path(orig_dir);
+            if (res != 0) overall_result = res;
+        }
+        return overall_result;
+    }
+
     PackageMetadata meta = ConfigParser::parse("lymar.nol");
     if (meta.name.empty()) {
         std::cerr << "error: could not find lymar.nol or package name\n";
@@ -20,6 +55,10 @@ int handle_build(int argc, char** argv) {
 
     std::string entry_point = "src/main.lm";
     std::string output_file = meta.name;
+    std::string target_triple = "";
+    bool locked = false;
+    bool frozen = false;
+    bool offline = false;
     std::vector<std::string> forwarded_args;
     bool forwarding = false;
 
@@ -32,9 +71,21 @@ int handle_build(int argc, char** argv) {
         if (forwarding) {
             forwarded_args.push_back(arg);
         } else {
-             if (arg == "-o" && i + 1 < argc) {
+            if (arg == "-o" && i + 1 < argc) {
                 output_file = argv[++i];
-             } else if (arg[0] != '-') {
+            } else if ((arg == "--target" || arg == "-t") && i + 1 < argc) {
+                target_triple = argv[++i];
+            } else if (arg.rfind("--target=", 0) == 0) {
+                target_triple = arg.substr(9);
+            } else if (arg == "--locked") {
+                locked = true;
+            } else if (arg == "--frozen") {
+                frozen = true;
+                locked = true;
+                offline = true;
+            } else if (arg == "--offline") {
+                offline = true;
+            } else if (arg[0] != '-') {
                 entry_point = arg;
             }
         }
@@ -53,14 +104,31 @@ int handle_build(int argc, char** argv) {
 
     std::string compiler_path = Lyra::find_compiler_path();
 
-    // Always resolve and update lockfile to ensure it's in sync
-    std::vector<ResolvedDependency> deps = DependencyResolver::resolve(".");
-    LockSystem::generate_lockfile(".", deps);
+    std::vector<ResolvedDependency> deps;
+    if (locked || frozen) {
+        if (!LockSystem::lockfile_exists(".")) {
+            std::cerr << "error: --locked / --frozen specified but lymar.lock does not exist\n";
+            return 1;
+        }
+        deps = LockSystem::read_lockfile(".");
+        if (!LockSystem::verify_lockfile_integrity(".")) {
+            std::cerr << "error: lockfile integrity verification failed\n";
+            return 1;
+        }
+    } else {
+        deps = DependencyResolver::resolve(".", {}, offline);
+        LockSystem::generate_lockfile(".", deps);
+    }
 
     std::vector<std::string> args;
     args.push_back("build");
     args.push_back("-o");
     args.push_back(output_file);
+
+    if (!target_triple.empty()) {
+        args.push_back("--target");
+        args.push_back(target_triple);
+    }
 
     args.push_back("-I");
     args.push_back(".");
