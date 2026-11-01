@@ -6,7 +6,25 @@
 #include <fstream>
 #include <cstring>
 #include <cstdint>
+#if defined(__has_include)
+#  if __has_include(<arpa/inet.h>)
+#    include <arpa/inet.h>
+#  else
+// Non-POSIX sysroots (e.g. MinGW) lack <arpa/inet.h>; provide the one helper this
+// builder needs (host -> big-endian 32-bit) so DMG packaging stays portable.
+inline uint32_t htonl(uint32_t hostlong) {
+    uint8_t b[4];
+    b[0] = static_cast<uint8_t>((hostlong >> 24) & 0xFF);
+    b[1] = static_cast<uint8_t>((hostlong >> 16) & 0xFF);
+    b[2] = static_cast<uint8_t>((hostlong >> 8) & 0xFF);
+    b[3] = static_cast<uint8_t>(hostlong & 0xFF);
+    return (static_cast<uint32_t>(b[0]) << 24) | (static_cast<uint32_t>(b[1]) << 16) |
+           (static_cast<uint32_t>(b[2]) << 8) | static_cast<uint32_t>(b[3]);
+}
+#  endif
+#else
 #include <arpa/inet.h>
+#endif
 #include "tar_helper.hh"
 #include <zlib.h>
 
