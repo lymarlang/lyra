@@ -148,7 +148,7 @@ static int dispatch(int argc, char** argv) {
         return handle_toolchain(argc, argv);
     } else if (command == "lsp") {
         return handle_lsp(argc, argv);
-    } else if (command == "fmt") {
+    } else if (command == "fmt" || command == "format") {
         return handle_fmt(argc, argv);
     } else if (command == "vendor") {
         return handle_vendor(argc, argv);

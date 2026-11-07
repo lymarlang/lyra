@@ -1011,31 +1011,36 @@ int handle_lsp(int argc, char** argv) {
 
 int handle_fmt(int argc, char** argv) {
     bool check_only = false;
-    std::vector<std::string> targets;
+    bool stdout_mode = false;
+    std::vector<std::string> raw_targets;
 
     for (int i = 2; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--check") {
             check_only = true;
+        } else if (arg == "--stdout") {
+            stdout_mode = true;
         } else if (arg[0] != '-') {
-            targets.push_back(arg);
+            raw_targets.push_back(arg);
         }
     }
 
-    if (targets.empty()) {
-        if (fs::exists("src")) {
-            for (const auto& entry : fs::recursive_directory_iterator("src")) {
+    if (raw_targets.empty()) {
+        if (fs::exists("src")) raw_targets.push_back("src");
+        if (fs::exists("tests")) raw_targets.push_back("tests");
+        if (fs::exists("std")) raw_targets.push_back("std");
+    }
+
+    std::vector<std::string> targets;
+    for (const auto& t : raw_targets) {
+        if (fs::is_directory(t)) {
+            for (const auto& entry : fs::recursive_directory_iterator(t)) {
                 if (entry.is_regular_file() && entry.path().extension() == ".lm") {
-                    targets.push_back(entry.path().string());
+                    targets.push_back(entry.path().generic_string());
                 }
             }
-        }
-        if (fs::exists("tests")) {
-            for (const auto& entry : fs::recursive_directory_iterator("tests")) {
-                if (entry.is_regular_file() && entry.path().extension() == ".lm") {
-                    targets.push_back(entry.path().string());
-                }
-            }
+        } else if (fs::is_regular_file(t)) {
+            targets.push_back(t);
         }
     }
 
@@ -1044,13 +1049,7 @@ int handle_fmt(int argc, char** argv) {
         return 0;
     }
 
-    int files_changed = 0;
-    for (const auto& file_path : targets) {
-        std::ifstream in(file_path);
-        if (!in.is_open()) continue;
-        std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        in.close();
-
+    auto format_code = [](const std::string& content) -> std::string {
         std::istringstream stream(content);
         std::string line;
         std::string formatted;
@@ -1075,6 +1074,25 @@ int handle_fmt(int argc, char** argv) {
                 indent_level++;
             }
         }
+        return formatted;
+    };
+
+    if (stdout_mode && targets.size() == 1) {
+        std::ifstream in(targets[0]);
+        if (!in.is_open()) return 1;
+        std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::cout << format_code(content);
+        return 0;
+    }
+
+    int files_changed = 0;
+    for (const auto& file_path : targets) {
+        std::ifstream in(file_path);
+        if (!in.is_open()) continue;
+        std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        in.close();
+
+        std::string formatted = format_code(content);
 
         if (formatted != content) {
             files_changed++;
